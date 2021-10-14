@@ -117,7 +117,7 @@ class Offset_shader extends Shader {
                 
                 void main(){
                     vec4 tex_color = texture2D(texture, texture_coord);
-                    gl_Position = projection_camera_model_transform * vec4( position.x, position.y - tex_color.y, position.z, 1.0 );
+                    gl_Position = projection_camera_model_transform * vec4( position.x, position.y + (1.0 - tex_color.x) * 10.0, position.z, 1.0 );
                     f_tex_coord = texture_coord;
                 }`;
     }
@@ -128,6 +128,7 @@ class Offset_shader extends Shader {
                 void main(){
                     vec4 tex_color = texture2D(texture, f_tex_coord);
                     gl_FragColor = tex_color;
+                    //gl_FragColor = color;
                 }`;
     }
 }
