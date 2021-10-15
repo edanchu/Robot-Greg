@@ -98,14 +98,14 @@ class Triangle_Strip_Plane extends Shape{
         }
 
         for (let i = 0; i < this.arrays.position.length; i++){
-            let distanceVec = Vector3.create(-origin[0], -origin[1], -origin[2]).minus(Vector3.create(this.arrays.position[i][0], this.arrays.position[i][1], this.arrays.position[i][2]));
+            let distanceVec = Vector3.create(origin[0], -origin[1], origin[2]).minus(Vector3.create(this.arrays.position[i][0], this.arrays.position[i][1], this.arrays.position[i][2]));
             let dest = (direction.times(distanceVec.norm())).plus(Vector3.create(origin[0], origin[1], origin[2]));
             let distance = Math.abs((dest.minus(Vector3.create(this.arrays.position[i][0], this.arrays.position[i][1], this.arrays.position[i][2])).norm()));
 
             if (distance < minDistance){
                 minDistance = distance;
                 vertexNum = i;
-                finalDest = dest;
+                finalDest = Vector3.create(this.arrays.position[i][0], this.arrays.position[i][1], this.arrays.position[i][2]);
             }
         }
 
@@ -234,7 +234,7 @@ class Custom_Movement_Controls extends defs.Movement_Controls{
         canvas.addEventListener("mousemove", e => {
             e.preventDefault();
             this.mouse.from_center = mouse_position(e);
-            globOrig = Vector3.create(this.pos[0] + this.mouse.from_center[0], this.pos[1] + this.mouse.from_center[1], this.pos[2]);
+            globOrig = Vector3.create(this.pos[0] + this.mouse.from_center[0]/20, this.pos[1] + this.mouse.from_center[1]/14, this.pos[2]);
             globDir = this.z_axis;
         });
         canvas.addEventListener("mouseout", e => {
