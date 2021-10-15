@@ -111,7 +111,7 @@ class Triangle_Strip_Plane extends Shape{
 
         if(minDistance !== 999999999){
             //return vertexNum;
-            return finalDest;
+            return [finalDest, vertexNum];
         }
 
         return null;
@@ -397,15 +397,15 @@ export class Assignment2 extends Base_Scene {
     display(context, program_state) {
         super.display(context, program_state);
 
-       // for (let z = 0; z < this.offsetsWidth * 4; z+= 4){
-       //     for (let x = 0; x < this.offssetsLength * 4; x+= 4){
-       //         this.offsets[x+z*this.offsetsWidth] = 128 * (Math.sin(x/20 - program_state.animation_time/1000) + 1);
-       //         this.offsets[x+(z*this.offsetsWidth)+1] = 0;
-       //         this.offsets[x+(z*this.offsetsWidth)+2] = 255;
-       //         this.offsets[x+(z*this.offsetsWidth)+3] = 255;
-       //     }
-       // }
-       // this.texture.copy_onto_graphics_card(context.context, false);
+        for (let z = 0; z < this.offsetsWidth * 4; z+= 4){
+            for (let x = 0; x < this.offsetsLength * 4; x+= 4){
+                this.offsets[x+z*this.offsetsWidth] = 128 * (Math.sin(x/20 - program_state.animation_time/1000) + 1);
+                this.offsets[x+(z*this.offsetsWidth)+1] = 0;
+                this.offsets[x+(z*this.offsetsWidth)+2] = 255;
+                this.offsets[x+(z*this.offsetsWidth)+3] = 255;
+            }
+        }
+        this.texture.copy_onto_graphics_card(context.context, false);
 
 
         let model_transform = Mat4.identity();
@@ -415,7 +415,9 @@ export class Assignment2 extends Base_Scene {
         this.shapes.axis.draw(context, program_state, model_transform, this.materials.plastic);
         //this.shapes.square.draw(context, program_state, model_transform, this.materials.customOffset);
 
-        let dest = this.shapes.plane.intersection(globOrig, globDir);
+        let intersect = this.shapes.plane.intersection(globOrig, globDir);
+        let dest = intersect[0];
+        dest[1] += this.offsets[intersect[1] * 4]/255;
         if (!dest){
             dest = Vector3.create(0,0,0);
         }
