@@ -345,6 +345,7 @@ class Base_Scene extends Scene {
         this.offsetsWidth = 256;
         this.offsetsLength = 256;
         this.offsets = [];
+        this.density = 10;
         for (let i = 0; i < this.offsetsWidth * this.offsetsLength; i++){
             this.offsets.push(0, 255, 255, 255);
         }
@@ -356,7 +357,7 @@ class Base_Scene extends Scene {
             'cube': new Cube(),
             'outline': new Cube_Outline(),
             'single_strip' : new Cube_Single_Strip(),
-            'plane' : new Triangle_Strip_Plane(20,20, Vector3.create(0,0,0), 10),
+            'plane' : new Triangle_Strip_Plane(20,20, Vector3.create(0,0,0), this.density),
             'axis' : new defs.Axis_Arrows()
         };
 
@@ -417,7 +418,6 @@ export class Assignment2 extends Base_Scene {
 
         let intersect = this.shapes.plane.intersection(globOrig, globDir);
         let dest = intersect[0];
-        dest[1] += this.offsets[intersect[1] * 4]/255;
         if (!dest){
             dest = Vector3.create(0,0,0);
         }
