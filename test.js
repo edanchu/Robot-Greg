@@ -62,19 +62,27 @@ class Cube_Single_Strip extends Shape {
     }
 }
 
+// custom shape class that creates a triangle strip plane with a given length (z wise) and width (x wise) centered around a
+// given origin. Each vertex is placed such that there are density number of vertices between each unit distance
+// (eg: density 10 means that youll get 10 vertices between (0,0,0) and (1,0,0))
 class Triangle_Strip_Plane extends Shape{
     constructor(length, width, origin, density){
         super("position", "normal", "texture_coord");
         let denseWidth = width * density;
         let denseLength = length * density;
+        //create vertex positions and texture coords. texture coords go from 0,1 in top left to 1,0 in bottom right and are
+        // just normalized by percentage of the way from 0 -> number of wanted vertices
         for (let z = 0; z < denseWidth; z++){
             for (let x = 0; x < denseLength; x++){
                 this.arrays.position.push(Vector3.create(x/density - length/2 + origin[0] + 1,origin[1],z/density - width/2 + origin[2] + 1));
                 this.arrays.texture_coord.push(Vector.create(x/denseLength,1 - (z/denseWidth)));
             }
         }
+        //copy position array into the normals array. I think there is probably a better way to do this, but I'm not sure since I'm crap at javascript
         this.arrays.normal.push.apply(this.arrays.normal, this.arrays.position);
 
+        //create the index buffer by connecting points by right hand rule starting by top left, then one under, then one left of the original point
+        //in order for the triangle strips to work need to double up on the last index in every row, and the one right after. I can explain why in person
         for (let z = 0; z < denseWidth - 1; z++) {
             if (z > 0) this.indices.push(z * denseLength);
             for (let x = 0; x < denseLength; x++) {
@@ -84,10 +92,14 @@ class Triangle_Strip_Plane extends Shape{
         }
     }
 
+    //find the closest vertex to a point in a given direction
     intersection(origin, direction){
         let minDistance = 999999999;
         let finalDest;
 
+        //loop through each vertex in the shape and find the closest one. distanceVec is the distance between the origin and the vertex you are looking at
+        //dest is the destination point made by moving the origin's location by distanceVec in the direction's direction
+        //distance is the distance between this destination point and the vertex
         for (let i = 0; i < this.arrays.position.length; i++){
             let distanceVec = Vector3.create(origin[0], origin[1], origin[2]).minus(Vector3.create(this.arrays.position[i][0], this.arrays.position[i][1], this.arrays.position[i][2]));
             let dest = (Vector3.create(direction[0], direction[1], direction[2]).times(distanceVec.norm())).plus(Vector3.create(origin[0], origin[1], origin[2]));
