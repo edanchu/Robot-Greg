@@ -95,7 +95,7 @@ class Triangle_Strip_Plane extends Shape{
     //find the closest vertex to a point in a given direction
     intersection(origin, direction){
         let minDistance = 999999999;
-        let finalDest;
+        let finalPos;
 
         //loop through each vertex in the shape and find the closest one. distanceVec is the distance between the origin and the vertex you are looking at
         //dest is the destination point made by moving the origin's location by distanceVec in the direction's direction
@@ -107,15 +107,18 @@ class Triangle_Strip_Plane extends Shape{
 
             if (distance < minDistance){
                 minDistance = distance;
-                finalDest = Vector3.create(this.arrays.position[i][0], this.arrays.position[i][1], this.arrays.position[i][2]);
+                finalPos = Vector3.create(this.arrays.position[i][0], this.arrays.position[i][1], this.arrays.position[i][2]);
             }
         }
 
-        return finalDest;
+        return finalPos;
 
     }
 }
 
+// custom shader class that takes in a texture and uses that texture's red value to offset the vertex's y position
+// paints the texture onto the shape as color. Eventually I think maybe we can pass in 2 textures, one as a heightmap
+// and one as the actual texture we want to be displayed. To learn how these work check out the examples in common.js
 class Offset_shader extends Shader {
     update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
         const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform],
@@ -123,10 +126,12 @@ class Offset_shader extends Shader {
         context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
         context.uniform4fv(gpu_addresses.color, material.color);
 
+        //upload the texture at the gpu's 0 index. The next line is what sets the texture we want to that index (at least, as far as I can tell)
         context.uniform1i(gpu_addresses.texture, 0);
         material.texture.activate(context);
     }
 
+    //glsl code that goes into both the vertex and fragment shaders. the code here gives them both the texture we uploaded to the gpu
     shared_glsl_code() {
         return `precision mediump float;
                 uniform sampler2D texture;
@@ -134,6 +139,7 @@ class Offset_shader extends Shader {
             `;
     }
 
+    //sets each vertex's position to the its position + the red value of our texture
     vertex_glsl_code() {
         return this.shared_glsl_code() + `
                 attribute vec3 position;                         
@@ -147,6 +153,7 @@ class Offset_shader extends Shader {
                 }`;
     }
 
+    //sets each pixel's color
     fragment_glsl_code() {
         return this.shared_glsl_code() + `
                 uniform vec4 color;
@@ -158,7 +165,10 @@ class Offset_shader extends Shader {
     }
 }
 
+//custom texture class that uses a software defined array as input instead of the html IMAGE object that the default class uses
+//need to pass in the length and width of the data as well as the data itself
 class Custom_Texture extends Graphics_Card_Object {
+    //im not sure why this assigns object properties this way, but I just kept what they did in tiny.js and added the length, width, etc designations
     constructor(length, width, data, min_filter = "LINEAR_MIPMAP_LINEAR") {
         super();
         Object.assign(this, {length, width, data, min_filter});
