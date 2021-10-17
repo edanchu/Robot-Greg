@@ -4,9 +4,6 @@ const {
     Vector, Vector3, vec, vec3, vec4, color, hex_color, Matrix, Mat4, Light, Shape, Material, Scene, Shader, Graphics_Card_Object, Texture
 } = tiny;
 
-let globDir;
-let globOrig;
-
 class Cube extends Shape {
     constructor() {
         super("position", "normal",);
@@ -89,32 +86,21 @@ class Triangle_Strip_Plane extends Shape{
 
     intersection(origin, direction){
         let minDistance = 999999999;
-        let vertexNum = -1;
         let finalDest;
 
-        if(!origin){
-            origin = Vector3.create(0,0,0);
-            direction = Vector3.create(0,1,0);
-        }
-
         for (let i = 0; i < this.arrays.position.length; i++){
-            let distanceVec = Vector3.create(origin[0], -origin[1], origin[2]).minus(Vector3.create(this.arrays.position[i][0], this.arrays.position[i][1], this.arrays.position[i][2]));
-            let dest = (direction.times(distanceVec.norm())).plus(Vector3.create(origin[0], origin[1], origin[2]));
+            let distanceVec = Vector3.create(origin[0], origin[1], origin[2]).minus(Vector3.create(this.arrays.position[i][0], this.arrays.position[i][1], this.arrays.position[i][2]));
+            let dest = (Vector3.create(direction[0], direction[1], direction[2]).times(distanceVec.norm())).plus(Vector3.create(origin[0], origin[1], origin[2]));
             let distance = Math.abs((dest.minus(Vector3.create(this.arrays.position[i][0], this.arrays.position[i][1], this.arrays.position[i][2])).norm()));
 
             if (distance < minDistance){
                 minDistance = distance;
-                vertexNum = i;
                 finalDest = Vector3.create(this.arrays.position[i][0], this.arrays.position[i][1], this.arrays.position[i][2]);
             }
         }
 
-        if(minDistance !== 999999999){
-            //return vertexNum;
-            return [finalDest, vertexNum];
-        }
+        return finalDest;
 
-        return null;
     }
 }
 
@@ -200,12 +186,9 @@ class Custom_Texture extends Graphics_Card_Object {
 
 class Custom_Movement_Controls extends defs.Movement_Controls{
 
-    constructor(colors, length, width){
+    constructor(){
         super();
-        this.mouse = {"from_center": vec(0, 0)};
-        this.colors = colors;
-        this.length = length;
-        this.width = width;
+        this.mouse = {"from_center": vec(0, 0), "isPainting": false};
     }
 
     add_mouse_controls(canvas) {
@@ -219,7 +202,7 @@ class Custom_Movement_Controls extends defs.Movement_Controls{
                 this.mouse.anchor = undefined;
             }
             else if (e.button === 0) {
-                this.mouse.isPainting = undefined;
+                this.mouse.isPainting = false;
             }
         });
         canvas.addEventListener("mousedown", e => {
@@ -234,8 +217,6 @@ class Custom_Movement_Controls extends defs.Movement_Controls{
         canvas.addEventListener("mousemove", e => {
             e.preventDefault();
             this.mouse.from_center = mouse_position(e);
-            globOrig = Vector3.create(this.pos[0] + this.mouse.from_center[0]/20, this.pos[1] + this.mouse.from_center[1]/14, this.pos[2]);
-            globDir = this.z_axis;
         });
         canvas.addEventListener("mouseout", e => {
             if (!this.mouse.anchor) this.mouse.from_center.scale_by(0)
@@ -342,13 +323,18 @@ class Base_Scene extends Scene {
     constructor() {
         super();
 
+        this.planeWidth = 20;
+        this.planeLength = 20;
+
         this.offsetsWidth = 256;
         this.offsetsLength = 256;
+        this.density = 7;
         this.offsets = [];
-        this.density = 10;
         for (let i = 0; i < this.offsetsWidth * this.offsetsLength; i++){
-            this.offsets.push(0, 255, 255, 255);
+            this.offsets.push(0, 0, 255, 255);
         }
+
+        this.FOV = Math.PI/4;
 
         this.texture = new Custom_Texture(this.offsetsLength, this.offsetsWidth, this.offsets);
 
@@ -357,7 +343,7 @@ class Base_Scene extends Scene {
             'cube': new Cube(),
             'outline': new Cube_Outline(),
             'single_strip' : new Cube_Single_Strip(),
-            'plane' : new Triangle_Strip_Plane(20,20, Vector3.create(0,0,0), this.density),
+            'plane' : new Triangle_Strip_Plane(this.planeLength,this.planeWidth, Vector3.create(0,0,0), this.density),
             'axis' : new defs.Axis_Arrows()
         };
 
@@ -372,56 +358,79 @@ class Base_Scene extends Scene {
 
     display(context, program_state) {
         if (!context.scratchpad.controls) {
-            this.children.push(context.scratchpad.controls = new Custom_Movement_Controls(this.offsets, this.offsetsLength, this.offsetsWidth));
+            this.children.push(context.scratchpad.controls = new Custom_Movement_Controls());
             program_state.set_camera(Mat4.look_at(vec3(6, 7, 25), vec3(0, 0, 0), vec3(0, 1, 0)))
         }
         program_state.projection_transform = Mat4.perspective(
-            Math.PI / 4, context.width / context.height, 1, 100);
+            this.FOV , context.width / context.height, 1, 100);
 
         const light_position = vec4(0, 5, 5, 1);
         program_state.lights = [new Light(light_position, color(1, 1, 1, 1), 1000)];
     }
 }
 
-export class Assignment2 extends Base_Scene {
+export class Test extends Base_Scene {
     constructor() {
         super();
-        this.clicked = 1;
     }
 
-
-    make_control_panel() {
+    make_control_panel(context) {
         this.key_triggered_button("Placeholder", ["c"], () => 1);
     }
 
+    getClosestLocOnPlane(context, program_state) {
+        let rect = context.canvas.getBoundingClientRect();
+        let mousePosPercent = Vector.create(2 * context.scratchpad.controls.mouse.from_center[0] / (rect.right - rect.left),
+            -2 * context.scratchpad.controls.mouse.from_center[1] / (rect.bottom + rect.top));
+
+        let transformMatrix = Mat4.inverse(program_state.projection_transform.times(program_state.camera_inverse));
+        let mousePointNear = Vector.create(mousePosPercent[0], mousePosPercent[1], -1, 1);
+        let worldSpaceNear = transformMatrix.times(mousePointNear);
+        worldSpaceNear = Vector.create(worldSpaceNear[0] / worldSpaceNear[3], worldSpaceNear[1] / worldSpaceNear[3], worldSpaceNear[2] / worldSpaceNear[3], 1);
+
+        let mousePointFar = Vector.create(mousePosPercent[0], mousePosPercent[1], 1, 1);
+        let worldSpaceFar = transformMatrix.times(mousePointFar);
+        worldSpaceFar = Vector.create(worldSpaceFar[0] / worldSpaceFar[3], worldSpaceFar[1] / worldSpaceFar[3], worldSpaceFar[2] / worldSpaceFar[3], 1);
+
+        let dest = this.shapes.plane.intersection(worldSpaceNear, worldSpaceFar.minus(worldSpaceNear).normalized());
+        return dest;
+    }
+
+    drawnOnTexture(location, brushRadius) {
+        let textureLocPercent = Vector.create((location[0]-1) / (this.planeWidth / 2), (location[2]-1) / (this.planeLength / 2));
+        let textureLoc = Vector.create(Math.ceil(textureLocPercent[0] * 128 + 128), Math.ceil(textureLocPercent[1] * 128 + 128));
+        for (let z = textureLoc[1]; z < textureLoc[1] + 10; z++) {
+            for (let x = textureLoc[0]; x < textureLoc[0] + 10; x++){
+                this.offsets[(x*4) + (z * 4 * 256)] = 255;
+            }
+        }
+    }
 
     display(context, program_state) {
         super.display(context, program_state);
 
-        for (let z = 0; z < this.offsetsWidth * 4; z+= 4){
-            for (let x = 0; x < this.offsetsLength * 4; x+= 4){
-                this.offsets[x+z*this.offsetsWidth] = 128 * (Math.sin(x/20 - program_state.animation_time/1000) + 1);
-                this.offsets[x+(z*this.offsetsWidth)+1] = 0;
-                this.offsets[x+(z*this.offsetsWidth)+2] = 255;
-                this.offsets[x+(z*this.offsetsWidth)+3] = 255;
-            }
-        }
-        this.texture.copy_onto_graphics_card(context.context, false);
+        //for (let z = 0; z < this.offsetsWidth * 4; z+= 4){
+        //    for (let x = 0; x < this.offsetsLength * 4; x+= 4){
+        //       // this.offsets[x+z*this.offsetsWidth] = 128 * (Math.sin(x/20 - program_state.animation_time/1000) + 1);
+        //        this.offsets[x+(z*this.offsetsWidth)+1] = 0;
+        //        this.offsets[x+(z*this.offsetsWidth)+2] = 255;
+        //        this.offsets[x+(z*this.offsetsWidth)+3] = 255;
+        //    }
+        //}
 
 
         let model_transform = Mat4.identity();
 
-        //this.shapes.plane.draw(context, program_state, model_transform, this.materials.offset, "TRIANGLE_STRIP");
         this.shapes.plane.draw(context, program_state, model_transform, this.materials.customOffset, "TRIANGLE_STRIP");
         this.shapes.axis.draw(context, program_state, model_transform, this.materials.plastic);
-        //this.shapes.square.draw(context, program_state, model_transform, this.materials.customOffset);
 
-        let intersect = this.shapes.plane.intersection(globOrig, globDir);
-        let dest = intersect[0];
-        if (!dest){
-            dest = Vector3.create(0,0,0);
+        let dest = this.getClosestLocOnPlane(context, program_state);
+
+        //model_transform = Mat4.translation(dest[0], dest[1], dest[2]);
+        //this.shapes.axis.draw(context, program_state, model_transform, this.materials.plastic);
+        if (context.scratchpad.controls.mouse.isPainting) {
+            this.drawnOnTexture(dest, 10);
+            this.texture.copy_onto_graphics_card(context.context, false);
         }
-        model_transform = model_transform.times(Mat4.translation(dest[0], dest[1], dest[2]));
-        this.shapes.axis.draw(context, program_state, model_transform, this.materials.plastic);
     }
 }
