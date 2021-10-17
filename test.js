@@ -167,11 +167,14 @@ class Offset_shader extends Shader {
 
 //custom texture class that uses a software defined array as input instead of the html IMAGE object that the default class uses
 //need to pass in the length and width of the data as well as the data itself
+//most of this is documented in the tiny-graphics.js file, so I will just comment the changes I made from that
 class Custom_Texture extends Graphics_Card_Object {
     //im not sure why this assigns object properties this way, but I just kept what they did in tiny.js and added the length, width, etc designations
     constructor(length, width, data, min_filter = "LINEAR_MIPMAP_LINEAR") {
         super();
         Object.assign(this, {length, width, data, min_filter});
+        //normally there would be declarations of an html IMAGE object here. We don't want to use a source file and want to
+        //pass in our own data, so I removed that
     }
 
     copy_onto_graphics_card(context, need_initial_settings = true) {
@@ -189,9 +192,9 @@ class Custom_Texture extends Graphics_Card_Object {
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl[this.min_filter]);
         }
-
+        //this converts our data array which is 4 8bit color values per pixel into the format that opengl uses and clamps in case our values are too high/low
         let imageData = new Uint8ClampedArray(this.data);
-
+        //creates the texture based on our data
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.width, this.length, 0, gl.RGBA, gl.UNSIGNED_BYTE, imageData);
         if (this.min_filter === "LINEAR_MIPMAP_LINEAR")
             gl.generateMipmap(gl.TEXTURE_2D);
@@ -200,29 +203,34 @@ class Custom_Texture extends Graphics_Card_Object {
     }
 
     activate(context, texture_unit = 0) {
+        //the original version of this function had a queried a ready flag to see if the texture had been loaded from disk
+        //we are providing our own data in software, so I removed both the flag and the test
         const gpu_instance = super.activate(context);
         context.activeTexture(context["TEXTURE" + texture_unit]);
         context.bindTexture(context.TEXTURE_2D, gpu_instance.texture_buffer_pointer);
     }
 }
 
+//This class is mostly the movement and mouse controls from common.js but with modifications for our program.
+//I added an isPainting variable that toggles on m1 being held down, and changed panning to use m2. Furthermore, I added mouse position to the live readout
+//The vast majority of this is documented in common.js, so I won't add comments for what I didn't change
 class Custom_Movement_Controls extends defs.Movement_Controls{
 
     constructor(){
         super();
+        //a mouse object that we can query from our main program to get location and pressedness
         this.mouse = {"from_center": vec(0, 0), "isPainting": false};
     }
 
     add_mouse_controls(canvas) {
-        // add_mouse_controls():  Attach HTML mouse events to the drawing canvas.
-        // First, measure mouse steering, for rotating the flyaround camera:
         const mouse_position = (e, rect = canvas.getBoundingClientRect()) =>
             vec(e.clientX - (rect.left + rect.right) / 2, e.clientY - (rect.bottom + rect.top) / 2);
-        // Set up mouse response.  The last one stops us from reacting if the mouse leaves the canvas:
         document.addEventListener("mouseup", e => {
+            //button 2 is rmb, which is used for panning
             if (e.button === 2) {
                 this.mouse.anchor = undefined;
             }
+            //button 0 is lmb used for painting
             else if (e.button === 0) {
                 this.mouse.isPainting = false;
             }
@@ -243,20 +251,20 @@ class Custom_Movement_Controls extends defs.Movement_Controls{
         canvas.addEventListener("mouseout", e => {
             if (!this.mouse.anchor) this.mouse.from_center.scale_by(0)
         });
+        //this line is used so that right click won't bring up the context menu when it is clicked on our 3d area.
+        //I got this from the documentation, and I'm not sure sure how it works
         canvas.oncontextmenu = function(e) {e.preventDefault()};
     }
 
     make_control_panel() {
-        // make_control_panel(): Sets up a panel of interactive HTML elements, including
-        // buttons with key bindings for affecting this scene, and live info readouts.
         this.control_panel.innerHTML += "Click and drag right mouse button to spin your viewpoint around it.<br>";
         this.live_string(box => box.textContent = "- Position: " + this.pos[0].toFixed(2) + ", " + this.pos[1].toFixed(2)
             + ", " + this.pos[2].toFixed(2));
         this.new_line();
-        // The facing directions are surprisingly affected by the left hand rule:
         this.live_string(box => box.textContent = "- Facing: " + ((this.z_axis[0] > 0 ? "West " : "East ")
             + (this.z_axis[1] > 0 ? "Down " : "Up ") + (this.z_axis[2] > 0 ? "North" : "South")));
         this.new_line();
+        //added a live readout of the mouse's position from the center of the screen in pixel coordinates
         this.live_string(box => box.textContent = "- Mouse Pos: " + (this.mouse.from_center));
         this.new_line();
         this.new_line();
@@ -315,49 +323,28 @@ class Custom_Movement_Controls extends defs.Movement_Controls{
             }, "#8B8885");
         this.new_line();
     }
-
-    display(context, graphics_state, dt = graphics_state.animation_delta_time / 1000) {
-        // The whole process of acting upon controls begins here.
-        const m = this.speed_multiplier * this.meters_per_frame,
-            r = this.speed_multiplier * this.radians_per_frame;
-
-        if (this.will_take_over_graphics_state) {
-            this.reset(graphics_state);
-            this.will_take_over_graphics_state = false;
-        }
-
-        if (!this.mouse_enabled_canvases.has(context.canvas)) {
-            this.add_mouse_controls(context.canvas);
-            this.mouse_enabled_canvases.add(context.canvas)
-        }
-        // Move in first-person.  Scale the normal camera aiming speed by dt for smoothness:
-        this.first_person_flyaround(dt * r, dt * m);
-        // Also apply third-person "arcball" camera mode if a mouse drag is occurring:
-        if (this.mouse.anchor)
-            this.third_person_arcball(dt * r);
-        // Log some values:
-        this.pos = this.inverse().times(vec4(0, 0, 0, 1));
-        this.z_axis = this.inverse().times(vec4(0, 0, 1, 0));
-    }
 }
 
 class Base_Scene extends Scene {
     constructor() {
         super();
 
+        //define how long and wide we want our plane to be. the density gives extra resolution by making more triangles in the same amount of space
         this.planeWidth = 20;
         this.planeLength = 20;
+        this.density = 7;
 
+        //declare a 256 by 256 array that will be used as our texture to store height data. for now it also has values in the other color channels
+        //since it is being used to color the plane as well, but that will change. Each color is from 0 to 255
+        // (this isn't actually constrained since js has no types and I don't know how to constrain that from here)
         this.offsetsWidth = 256;
         this.offsetsLength = 256;
-        this.density = 7;
         this.offsets = [];
         for (let i = 0; i < this.offsetsWidth * this.offsetsLength; i++){
             this.offsets.push(0, 0, 255, 255);
         }
 
-        this.FOV = Math.PI/4;
-
+        //creates our custom texture based on the heightmap data we just created
         this.texture = new Custom_Texture(this.offsetsLength, this.offsetsWidth, this.offsets);
 
         this.shapes = {
@@ -365,6 +352,7 @@ class Base_Scene extends Scene {
             'cube': new Cube(),
             'outline': new Cube_Outline(),
             'single_strip' : new Cube_Single_Strip(),
+            //creates our custom plane with the previously declared length, width, density, and an origin of (0,0,0)
             'plane' : new Triangle_Strip_Plane(this.planeLength,this.planeWidth, Vector3.create(0,0,0), this.density),
             'axis' : new defs.Axis_Arrows()
         };
@@ -372,8 +360,8 @@ class Base_Scene extends Scene {
         this.materials = {
             plastic: new Material(new defs.Phong_Shader(),
                 {ambient: .4, diffusivity: .6, color: hex_color("#ffffff")}),
+            //creates a material based on our texture. For now it also takes a color variable, but I think we can get rid of that at some point
             offset: new Material(new Offset_shader(), {color: hex_color("#2b3b86"), texture: this.texture}),
-            customOffset: new Material(new Offset_shader(), {color: hex_color("#2b3b86"), texture: this.texture})
         };
         this.white = new Material(new defs.Basic_Shader());
     }
@@ -381,10 +369,11 @@ class Base_Scene extends Scene {
     display(context, program_state) {
         if (!context.scratchpad.controls) {
             this.children.push(context.scratchpad.controls = new Custom_Movement_Controls());
+            //sets the camera at location (6,7,25), looking at the origin
             program_state.set_camera(Mat4.look_at(vec3(6, 7, 25), vec3(0, 0, 0), vec3(0, 1, 0)))
         }
         program_state.projection_transform = Mat4.perspective(
-            this.FOV , context.width / context.height, 1, 100);
+            Math.PI/4 , context.width / context.height, 1, 100);
 
         const light_position = vec4(0, 5, 5, 1);
         program_state.lights = [new Light(light_position, color(1, 1, 1, 1), 1000)];
@@ -400,27 +389,43 @@ export class Test extends Base_Scene {
         this.key_triggered_button("Placeholder", ["c"], () => 1);
     }
 
+    //helper function to get the location of the closest vertex on our plane to where the mouse is pointing
     getClosestLocOnPlane(context, program_state) {
+        //get the size of our canvas so we can know how far the mouse is from the center by normalizing as a percent from -1-1
         let rect = context.canvas.getBoundingClientRect();
         let mousePosPercent = Vector.create(2 * context.scratchpad.controls.mouse.from_center[0] / (rect.right - rect.left),
             -2 * context.scratchpad.controls.mouse.from_center[1] / (rect.bottom + rect.top));
 
+        //to turn this percentage into a usable value in our coordinate space we need to transform it from clip space to world space
+        //we can do this by multiplying and inverting our camera and projection matrices
         let transformMatrix = Mat4.inverse(program_state.projection_transform.times(program_state.camera_inverse));
+        //we now get two point in clip space, on on the near part of the cube, and one on the far part of the cube
         let mousePointNear = Vector.create(mousePosPercent[0], mousePosPercent[1], -1, 1);
         let worldSpaceNear = transformMatrix.times(mousePointNear);
+        //this is the world space coordinates of the near point. We divide by the last homogenous value because of the perspective transform. I am not 100% sure why we need this though
+        //         //I need to look more into this and as the TA as well
         worldSpaceNear = Vector.create(worldSpaceNear[0] / worldSpaceNear[3], worldSpaceNear[1] / worldSpaceNear[3], worldSpaceNear[2] / worldSpaceNear[3], 1);
 
         let mousePointFar = Vector.create(mousePosPercent[0], mousePosPercent[1], 1, 1);
         let worldSpaceFar = transformMatrix.times(mousePointFar);
+        //this is the world space coordinates of the far point. We divide by the last homogenous value because of the perspective transform. I am not 100% sure why we need this though
+        //I need to look more into this and as the TA as well
         worldSpaceFar = Vector.create(worldSpaceFar[0] / worldSpaceFar[3], worldSpaceFar[1] / worldSpaceFar[3], worldSpaceFar[2] / worldSpaceFar[3], 1);
 
-        let dest = this.shapes.plane.intersection(worldSpaceNear, worldSpaceFar.minus(worldSpaceNear).normalized());
-        return dest;
+        //this calls the intersection function of the plane shape to find which vertex is nearest to the mouse click. the function takes
+        //our mouse's location as the origin, and a vector direction to the world space location of the far coordinate
+        return this.shapes.plane.intersection(worldSpaceNear, worldSpaceFar.minus(worldSpaceNear).normalized());
     }
 
+    //this function draws onto the heightmap texture when given a location to draw (in world space coordinates) and a brush radius.
+    //eventually I intend for this to create a circle of that radius, but for now its just a square of size 10
     drawnOnTexture(location, brushRadius) {
+        //this find what percentage to the edge the location given is. I currently treat the texture as taking up the same world space size as the size of the plane
         let textureLocPercent = Vector.create((location[0]-1) / (this.planeWidth / 2), (location[2]-1) / (this.planeLength / 2));
-        let textureLoc = Vector.create(Math.ceil(textureLocPercent[0] * 128 + 128), Math.ceil(textureLocPercent[1] * 128 + 128));
+        //using the percentage we can find what z and x coordinates that would be given 128 rows to the right and down from the origin
+        let textureLoc = Vector.create(Math.ceil(textureLocPercent[0] * 128) + 128, Math.ceil(textureLocPercent[1] * 128) + 128);
+        //translate from the z and x coordinates into the texture and set the value to 255. ideally Id want it to be a circle with decreasing height from the center
+        //the *4 is because each "pixel" has r,g,b,a
         for (let z = textureLoc[1]; z < textureLoc[1] + 10; z++) {
             for (let x = textureLoc[0]; x < textureLoc[0] + 10; x++){
                 this.offsets[(x*4) + (z * 4 * 256)] = 255;
@@ -431,6 +436,7 @@ export class Test extends Base_Scene {
     display(context, program_state) {
         super.display(context, program_state);
 
+        //this was what I had before for the sin wave offsets
         //for (let z = 0; z < this.offsetsWidth * 4; z+= 4){
         //    for (let x = 0; x < this.offsetsLength * 4; x+= 4){
         //       // this.offsets[x+z*this.offsetsWidth] = 128 * (Math.sin(x/20 - program_state.animation_time/1000) + 1);
@@ -440,19 +446,19 @@ export class Test extends Base_Scene {
         //    }
         //}
 
-
-        let model_transform = Mat4.identity();
-
-        this.shapes.plane.draw(context, program_state, model_transform, this.materials.customOffset, "TRIANGLE_STRIP");
-        this.shapes.axis.draw(context, program_state, model_transform, this.materials.plastic);
-
-        let dest = this.getClosestLocOnPlane(context, program_state);
-
-        //model_transform = Mat4.translation(dest[0], dest[1], dest[2]);
-        //this.shapes.axis.draw(context, program_state, model_transform, this.materials.plastic);
+        //if the mouse is held down and we are trying to paint on the canvas
         if (context.scratchpad.controls.mouse.isPainting) {
+            //find the location we are trying to paint at
+            let dest = this.getClosestLocOnPlane(context, program_state);
+            //paint on the texture with a brush radius of 10 (the brush radius doesn't actually do anything yet)
             this.drawnOnTexture(dest, 10);
+            //send the newly updated texture to the gpu
             this.texture.copy_onto_graphics_card(context.context, false);
         }
+
+        //draw the plane and axis (axis was just so I could see if it is actually centered, I should honestly just remove it)
+        let model_transform = Mat4.identity();
+        this.shapes.plane.draw(context, program_state, model_transform, this.materials.offset, "TRIANGLE_STRIP");
+        this.shapes.axis.draw(context, program_state, model_transform, this.materials.plastic);
     }
 }
