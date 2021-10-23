@@ -93,7 +93,7 @@ class Triangle_Strip_Plane extends Shape{
     }
 
     //find the closest vertex to a point in a given direction
-    intersection(origin, direction){
+    closestVertexToRay(origin, direction){
         let minDistance = 999999999;
         let finalPos;
 
@@ -149,6 +149,7 @@ class Offset_shader extends Shader {
                 void main(){
                     vec4 tex_color = texture2D(texture, texture_coord);
                     gl_Position = projection_camera_model_transform * vec4( position.x, position.y + tex_color.r, position.z, 1.0 );
+                    //gl_Position = projection_camera_model_transform * vec4( position.x, position.y, position.z, 1.0 );
                     f_tex_coord = texture_coord;
                 }`;
     }
@@ -414,7 +415,7 @@ export class Test extends Base_Scene {
 
         //this calls the intersection function of the plane shape to find which vertex is nearest to the mouse click. the function takes
         //our mouse's location as the origin, and a vector direction to the world space location of the far coordinate
-        return this.shapes.plane.intersection(worldSpaceNear, worldSpaceFar.minus(worldSpaceNear).normalized());
+        return this.shapes.plane.closestVertexToRay(worldSpaceNear, worldSpaceFar.minus(worldSpaceNear).normalized());
     }
 
     //this function draws onto the heightmap texture when given a location to draw (in world space coordinates) and a brush radius.
@@ -424,34 +425,49 @@ export class Test extends Base_Scene {
         let textureLocPercent = Vector.create((location[0]-1) / (this.planeWidth / 2), (location[2]-1) / (this.planeLength / 2));
         //using the percentage we can find what z and x coordinates that would be given 128 rows to the right and down from the origin
         let textureLoc = Vector.create(Math.ceil(textureLocPercent[0] * 128) + 128, Math.ceil(textureLocPercent[1] * 128) + 128);
-        //translate from the z and x coordinates into the texture and set the value to 255. ideally Id want it to be a circle with decreasing height from the center
-        //the *4 is because each "pixel" has r,g,b,a
-        for (let z = textureLoc[1]; z < textureLoc[1] + 10; z++) {
-            for (let x = textureLoc[0]; x < textureLoc[0] + 10; x++){
-                this.offsets[(x*4) + (z * 4 * 256)] = 255;
-            }
+        //translate from the z and x coordinates into the texture and set the value to 255 using bresnaham's circle algo
+        for (let i = 1; i <= brushRadius; i++){
+            this.bresnahamCircleAlgo(textureLoc, 0, i, 3 - (2*brushRadius), 1 - Math.max(0.5, (i / brushRadius)));
         }
+    }
+
+    bresnahamCircleAlgo(origin, x, z, decisionParameter, intensity){
+        if (x > z)
+            return;
+
+        let colorInterval = 60;
+
+        this.offsets[((x + origin[0])*4) + ((z + origin[1]) * 4 * 256)] += colorInterval * intensity;
+        this.offsets[((x + origin[0])*4) + ((-z + origin[1]) * 4 * 256)] += colorInterval * intensity;
+        this.offsets[((-x + origin[0])*4) + ((z + origin[1]) * 4 * 256)] += colorInterval * intensity;
+        this.offsets[((-x + origin[0])*4) + ((-z + origin[1]) * 4 * 256)] += colorInterval * intensity;
+        this.offsets[((z + origin[0])*4) + ((x + origin[1]) * 4 * 256)] += colorInterval * intensity;
+        this.offsets[((-z + origin[0])*4) + ((x + origin[1]) * 4 * 256)] += colorInterval * intensity;
+        this.offsets[((-z + origin[0])*4) + ((-x + origin[1]) * 4 * 256)] += colorInterval * intensity;
+        this.offsets[((z + origin[0])*4) + ((-x + origin[1]) * 4 * 256)] += colorInterval * intensity;
+
+
+        if (decisionParameter < 0){
+            decisionParameter = decisionParameter + (4 * x) + 6
+            x += 1;
+        }
+        else {
+            decisionParameter = decisionParameter + (4 * (x - z)) + 10
+            x += 1;
+            z -= 1;
+        }
+        this.bresnahamCircleAlgo(origin, x, z, decisionParameter, intensity);
     }
 
     display(context, program_state) {
         super.display(context, program_state);
-
-        //this was what I had before for the sin wave offsets
-        //for (let z = 0; z < this.offsetsWidth * 4; z+= 4){
-        //    for (let x = 0; x < this.offsetsLength * 4; x+= 4){
-        //       // this.offsets[x+z*this.offsetsWidth] = 128 * (Math.sin(x/20 - program_state.animation_time/1000) + 1);
-        //        this.offsets[x+(z*this.offsetsWidth)+1] = 0;
-        //        this.offsets[x+(z*this.offsetsWidth)+2] = 255;
-        //        this.offsets[x+(z*this.offsetsWidth)+3] = 255;
-        //    }
-        //}
 
         //if the mouse is held down and we are trying to paint on the canvas
         if (context.scratchpad.controls.mouse.isPainting) {
             //find the location we are trying to paint at
             let dest = this.getClosestLocOnPlane(context, program_state);
             //paint on the texture with a brush radius of 10 (the brush radius doesn't actually do anything yet)
-            this.drawnOnTexture(dest, 10);
+            this.drawnOnTexture(dest, 8);
             //send the newly updated texture to the gpu
             this.texture.copy_onto_graphics_card(context.context, false);
         }
