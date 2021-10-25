@@ -103,8 +103,8 @@ class Triangle_Strip_Plane extends Shape{
         //dest is the destination point made by moving the origin's location by distanceVec in the direction's direction
         //distance is the distance between this destination point and the vertex
         for (let i = 0; i < this.arrays.position.length; i++){
-            let distanceVec = Vector3.create(origin[0], origin[1], origin[2]).minus(this.arrays.position[i]);
-            let dest = (Vector3.create(direction[0], direction[1], direction[2]).times(distanceVec.norm())).plus(Vector3.create(origin[0], origin[1], origin[2]));
+            let distanceNoDir = Vector3.create(origin[0], origin[1], origin[2]).minus(Vector3.create(this.arrays.position[i][0], 0, this.arrays.position[i][2])).norm();
+            let dest = Vector3.create(direction[0], direction[1], direction[2]).times(distanceNoDir).plus(Vector3.create(origin[0], origin[1], origin[2]));
             let distance = Math.abs((dest.minus(Vector3.create(this.arrays.position[i][0], 0, this.arrays.position[i][2])).norm()));
 
             if (distance < minDistance){
@@ -375,7 +375,6 @@ class Base_Scene extends Scene {
                 {ambient: .4, diffusivity: .6, color: hex_color("#ffffff")}),
             //creates a material based on our texture. For now it also takes a color variable, but I think we can get rid of that at some point
             offset: new Material(new Offset_shader(), {color: hex_color("#2b3b86"), texture: this.texture}),
-            texPlast: new Material(new defs.Textured_Phong(), {ambient: .4, diffusivity: .6, color: hex_color("#ffffff"), texture: this.texture}),
         };
         this.white = new Material(new defs.Basic_Shader());
     }
@@ -415,14 +414,12 @@ export class Test extends Base_Scene {
         //we now get two point in clip space, on on the near part of the cube, and one on the far part of the cube
         let mousePointNear = Vector.create(mousePosPercent[0], mousePosPercent[1], -1, 1);
         let worldSpaceNear = transformMatrix.times(mousePointNear);
-        //this is the world space coordinates of the near point. We divide by the last homogenous value because of the perspective transform. I am not 100% sure why we need this though
-        //         //I need to look more into this and as the TA as well
+        //this is the world space coordinates of the near point. We divide by the last homogenous value because of the perspective transform
         worldSpaceNear = Vector.create(worldSpaceNear[0] / worldSpaceNear[3], worldSpaceNear[1] / worldSpaceNear[3], worldSpaceNear[2] / worldSpaceNear[3], 1);
 
         let mousePointFar = Vector.create(mousePosPercent[0], mousePosPercent[1], 1, 1);
         let worldSpaceFar = transformMatrix.times(mousePointFar);
-        //this is the world space coordinates of the far point. We divide by the last homogenous value because of the perspective transform. I am not 100% sure why we need this though
-        //I need to look more into this and as the TA as well
+        //this is the world space coordinates of the far point. We divide by the last homogenous value because of the perspective transform
         worldSpaceFar = Vector.create(worldSpaceFar[0] / worldSpaceFar[3], worldSpaceFar[1] / worldSpaceFar[3], worldSpaceFar[2] / worldSpaceFar[3], 1);
 
         //this calls the intersection function of the plane shape to find which vertex is nearest to the mouse click. the function takes
@@ -437,9 +434,20 @@ export class Test extends Base_Scene {
         let textureLocPercent = Vector.create((location[0]-1) / (this.planeWidth / 2), (location[2]-1) / (this.planeLength / 2));
         //using the percentage we can find what z and x coordinates that would be given 128 rows to the right and down from the origin
         let textureLoc = Vector.create(Math.ceil(textureLocPercent[0] * 128) + 128, Math.ceil(textureLocPercent[1] * 128) + 128);
-        //translate from the z and x coordinates into the texture and set the value to 255 using bresnaham's circle algo
-        for (let i = 1; i <= brushRadius; i++){
-            this.bresnahamCircleAlgoTexture(textureLoc, 0, i, 3 - (2*brushRadius), 1 - Math.max(0.5, (i / brushRadius)));
+
+        let strength = 20;
+        for (let i = 0; i < brushRadius; i++) {
+            for (let dy = 0; dy < i; dy++) {
+                let dx = 0;
+                let sq = (i * i) - (dy * dy);
+                while ((dx * dx) < sq) {
+                    this.offsets[((dx + textureLoc[0]) * 4) + ((dy + textureLoc[1]) * 4 * 256)] += strength;
+                    this.offsets[((dx + textureLoc[0]) * 4) + ((-dy + textureLoc[1] - 1) * 4 * 256)] += strength;
+                    this.offsets[((-dx + textureLoc[0] - 1) * 4) + ((dy + textureLoc[1]) * 4 * 256)] += strength;
+                    this.offsets[((-dx + textureLoc[0] - 1) * 4) + ((-dy + textureLoc[1] - 1) * 4 * 256)] += strength;
+                    dx++;
+                }
+            }
         }
     }
 
@@ -448,65 +456,21 @@ export class Test extends Base_Scene {
         let planeLocPercent = Vector.create((location[0]-1) / (this.planeWidth / 2), (location[2]-1) / (this.planeLength / 2));
         //using the percentage we can find what z and x coordinates that would be given 128 rows to the right and down from the origin
         let planeLoc = Vector.create(Math.ceil(planeLocPercent[0] * (this.planeWidth * this.planeDensity / 2)) + (this.planeWidth * this.planeDensity / 2), Math.ceil(planeLocPercent[1] * (this.planeWidth * this.planeDensity / 2)) + (this.planeWidth * this.planeDensity / 2));
-        //translate from the z and x coordinates into the texture and set the value to 255 using bresnaham's circle algo
-        for (let i = 1; i <= brushRadius; i++){
-            this.bresnahamCircleAlgoVertices(planeLoc, 0, i, 3 - (2*brushRadius), 1 - Math.max(0.5, (i / (brushRadius))));
+
+        let strength = 0.05 / Math.max((brushRadius - 6), 1);
+        for (let i = 0; i < brushRadius; i++) {
+            for (let dy = 0; dy < i; dy++) {
+                let dx = 0;
+                let sq = (i * i) - (dy * dy);
+                while ((dx * dx) < sq) {
+                    this.shapes.plane.addVertexHeight(dx + planeLoc[0], dy + planeLoc[1], strength);
+                    this.shapes.plane.addVertexHeight(dx + planeLoc[0], -dy + planeLoc[1] - 1, strength);
+                    this.shapes.plane.addVertexHeight(-dx + planeLoc[0] - 1, dy + planeLoc[1], strength);
+                    this.shapes.plane.addVertexHeight(-dx + planeLoc[0] - 1, -dy + planeLoc[1] - 1, strength);
+                    dx++;
+                }
+            }
         }
-    }
-
-    bresnahamCircleAlgoTexture(origin, x, z, decisionParameter, intensity){
-        if (x > z)
-            return;
-
-        let colorInterval = 60;
-
-        this.offsets[((x + origin[0])*4) + ((z + origin[1]) * 4 * 256)] += colorInterval * intensity;
-        this.offsets[((x + origin[0])*4) + ((-z + origin[1]) * 4 * 256)] += colorInterval * intensity;
-        this.offsets[((-x + origin[0])*4) + ((z + origin[1]) * 4 * 256)] += colorInterval * intensity;
-        this.offsets[((-x + origin[0])*4) + ((-z + origin[1]) * 4 * 256)] += colorInterval * intensity;
-        this.offsets[((z + origin[0])*4) + ((x + origin[1]) * 4 * 256)] += colorInterval * intensity;
-        this.offsets[((-z + origin[0])*4) + ((x + origin[1]) * 4 * 256)] += colorInterval * intensity;
-        this.offsets[((-z + origin[0])*4) + ((-x + origin[1]) * 4 * 256)] += colorInterval * intensity;
-        this.offsets[((z + origin[0])*4) + ((-x + origin[1]) * 4 * 256)] += colorInterval * intensity;
-
-
-        if (decisionParameter < 0){
-            decisionParameter = decisionParameter + (4 * x) + 6
-            x += 1;
-        }
-        else {
-            decisionParameter = decisionParameter + (4 * (x - z)) + 10
-            x += 1;
-            z -= 1;
-        }
-        this.bresnahamCircleAlgoTexture(origin, x, z, decisionParameter, intensity);
-    }
-
-    bresnahamCircleAlgoVertices(origin, x, z, decisionParameter, intensity){
-        if (x >= z)
-            return;
-
-        let colorInterval = 0.2;
-
-        this.shapes.plane.addVertexHeight(x + origin[0], z + origin[1], colorInterval * intensity);
-        this.shapes.plane.addVertexHeight(x + origin[0], -z + origin[1], colorInterval * intensity);
-        this.shapes.plane.addVertexHeight(-x + origin[0], z + origin[1], colorInterval * intensity);
-        this.shapes.plane.addVertexHeight(-x + origin[0], -z + origin[1], colorInterval * intensity);
-        this.shapes.plane.addVertexHeight(z + origin[0], x + origin[1], colorInterval * intensity);
-        this.shapes.plane.addVertexHeight(-z + origin[0], x + origin[1], colorInterval * intensity);
-        this.shapes.plane.addVertexHeight(-z + origin[0], -x + origin[1], colorInterval * intensity);
-        this.shapes.plane.addVertexHeight(z + origin[0], -x + origin[1], colorInterval * intensity);
-
-        if (decisionParameter < 0){
-            decisionParameter = decisionParameter + (4 * x) + 6
-            x += 1;
-        }
-        else {
-            decisionParameter = decisionParameter + (4 * (x - z)) + 10
-            x += 1;
-            z -= 1;
-        }
-        this.bresnahamCircleAlgoVertices(origin, x, z, decisionParameter, intensity);
     }
 
     display(context, program_state) {
@@ -517,9 +481,9 @@ export class Test extends Base_Scene {
             //find the location we are trying to paint at
             let dest = this.getClosestLocOnPlane(context, program_state);
             //paint on the texture with a brush radius of 10 (the brush radius doesn't actually do anything yet)
-            this.drawnOnTexture(dest, 20);
+            this.drawnOnTexture(dest, 12);
             this.texture.copy_onto_graphics_card(context.context, false);
-            this.drawnOnPlane(dest, 15);
+            this.drawnOnPlane(dest, 8);
             this.shapes.plane.copy_onto_graphics_card(context.context);
         }
 
