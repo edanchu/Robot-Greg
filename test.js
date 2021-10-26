@@ -123,7 +123,8 @@ class Triangle_Strip_Plane extends Shape{
 
     addVertexHeight(x, z, newHeight){
         if ((x + (z * this.width * this.density)) < this.arrays.position.length && (x + (z * this.width * this.density)) >= 0) {
-            this.arrays.position[x + (z * this.width * this.density)][1] -= newHeight;
+            this.arrays.position[x + (z * this.width * this.density)][1] += newHeight;
+            this.arrays.normal[x + (z * this.width * this.density)][1] += newHeight;
         }
     }
 }
@@ -177,7 +178,343 @@ class Offset_shader extends Shader {
     }
 }
 
+class Grass_Shader extends Shader {
+    constructor(layer) {
+        super();
+        this.layer = layer;
+    }
+
+    update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
+        const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform], PCM = P.times(C).times(M);
+        context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
+        context.uniform4fv(gpu_addresses.color, material.color);
+        context.uniform1f(gpu_addresses.time, graphics_state.animation_time / 1000.0);
+        context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform.transposed()));
+        context.uniform1f(gpu_addresses.layer, this.layer);
+    }
+
+    //glsl code that goes into both the vertex and fragment shaders. the code here gives them both the texture we uploaded to the gpu
+    shared_glsl_code() {
+        return `precision mediump float;
+        
+                varying vec2 noisePos;
+                uniform float time;
+                uniform float layer;
+                
+                float unity_noise_randomValue (vec2 uv){
+                    return fract(sin(dot(uv, vec2(12.9898, 78.233)))*43758.5453);
+                }
+
+                float unity_noise_interpolate (float a, float b, float t){
+                    return (1.0-t)*a + (t*b);
+                }
+
+                float unity_valueNoise (vec2 uv){
+                    vec2 i = floor(uv);
+                    vec2 f = fract(uv);
+                    f = f * f * (3.0 - 2.0 * f);
+
+                    uv = abs(fract(uv) - 0.5);
+                    vec2 c0 = i + vec2(0.0, 0.0);
+                    vec2 c1 = i + vec2(1.0, 0.0);
+                    vec2 c2 = i + vec2(0.0, 1.0);
+                    vec2 c3 = i + vec2(1.0, 1.0);
+                    float r0 = unity_noise_randomValue(c0);
+                    float r1 = unity_noise_randomValue(c1);
+                    float r2 = unity_noise_randomValue(c2);
+                    float r3 = unity_noise_randomValue(c3);
+
+                   float bottomOfGrid = unity_noise_interpolate(r0, r1, f.x);
+                   float topOfGrid = unity_noise_interpolate(r2, r3, f.x);
+                   float t = unity_noise_interpolate(bottomOfGrid, topOfGrid, f.y);
+                   return t;
+                }
+
+                float Unity_SimpleNoise_float(vec2 UV, float Scale){
+                    float t = 0.0;
+
+                    float freq = pow(2.0, float(0));
+                    float amp = pow(0.5, float(3-0));
+                    t += unity_valueNoise(vec2(UV.x*Scale/freq, UV.y*Scale/freq))*amp;
+
+                    freq = pow(2.0, float(1));
+                    amp = pow(0.5, float(3-1));
+                    t += unity_valueNoise(vec2(UV.x*Scale/freq, UV.y*Scale/freq))*amp;
+
+                    freq = pow(2.0, float(2));
+                    amp = pow(0.5, float(3-2));
+                    t += unity_valueNoise(vec2(UV.x*Scale/freq, UV.y*Scale/freq))*amp;
+                    
+                    return t;
+                }
+        
+            `;
+    }
+
+    //sets each vertex's position to the its position + the red value of our texture
+    vertex_glsl_code() {
+        return this.shared_glsl_code() + `
+                attribute vec3 position;                         
+                uniform mat4 projection_camera_model_transform;
+                uniform mat4 model_transform;
+                
+                void main(){
+                    noisePos = (model_transform * vec4(position, 1.0)).xz;
+                    float alpha = (layer / 10.0) * Unity_SimpleNoise_float(noisePos + vec2(time * 2.0, time * 2.0), 1.0);
+                    gl_Position = projection_camera_model_transform * vec4(position.x + (0.2 * alpha), position.y + (0.04 * layer), position.z + (0.2 * alpha), 1.0);
+                }`;
+    }
+
+    //sets each pixel's color
+    fragment_glsl_code() {
+        return this.shared_glsl_code() + `
+                uniform vec4 color;
+                void main(){
+                    gl_FragColor = color;
+                    float alpha = pow(Unity_SimpleNoise_float(noisePos, 30.0), 2.0 * (layer / 10.0));
+                    if (alpha < 0.3){
+                        alpha = 0.0;
+                    }
+                    gl_FragColor.w = alpha;
+                }`;
+    }
+}
+
+class Grass_Shader_Texture_Painting extends Shader {
+    constructor(layer) {
+        super();
+        this.layer = layer;
+    }
+
+    update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
+        const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform], PCM = P.times(C).times(M);
+        context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
+        context.uniform4fv(gpu_addresses.color, material.color);
+        context.uniform1f(gpu_addresses.time, graphics_state.animation_time / 1000.0);
+        context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform.transposed()));
+        context.uniform1f(gpu_addresses.layer, this.layer);
+        context.uniform1i(gpu_addresses.texture, 0);
+        material.texture.activate(context);
+    }
+
+    //glsl code that goes into both the vertex and fragment shaders. the code here gives them both the texture we uploaded to the gpu
+    shared_glsl_code() {
+        return `precision mediump float;
+        
+                varying vec2 noisePos;
+                uniform float time;
+                uniform float layer;
+                
+                uniform sampler2D texture;
+                varying vec2 f_tex_coord;
+                
+                float unity_noise_randomValue (vec2 uv){
+                    return fract(sin(dot(uv, vec2(12.9898, 78.233)))*43758.5453);
+                }
+
+                float unity_noise_interpolate (float a, float b, float t){
+                    return (1.0-t)*a + (t*b);
+                }
+
+                float unity_valueNoise (vec2 uv){
+                    vec2 i = floor(uv);
+                    vec2 f = fract(uv);
+                    f = f * f * (3.0 - 2.0 * f);
+
+                    uv = abs(fract(uv) - 0.5);
+                    vec2 c0 = i + vec2(0.0, 0.0);
+                    vec2 c1 = i + vec2(1.0, 0.0);
+                    vec2 c2 = i + vec2(0.0, 1.0);
+                    vec2 c3 = i + vec2(1.0, 1.0);
+                    float r0 = unity_noise_randomValue(c0);
+                    float r1 = unity_noise_randomValue(c1);
+                    float r2 = unity_noise_randomValue(c2);
+                    float r3 = unity_noise_randomValue(c3);
+
+                   float bottomOfGrid = unity_noise_interpolate(r0, r1, f.x);
+                   float topOfGrid = unity_noise_interpolate(r2, r3, f.x);
+                   float t = unity_noise_interpolate(bottomOfGrid, topOfGrid, f.y);
+                   return t;
+                }
+
+                float Unity_SimpleNoise_float(vec2 UV, float Scale){
+                    float t = 0.0;
+
+                    float freq = pow(2.0, float(0));
+                    float amp = pow(0.5, float(3-0));
+                    t += unity_valueNoise(vec2(UV.x*Scale/freq, UV.y*Scale/freq))*amp;
+
+                    freq = pow(2.0, float(1));
+                    amp = pow(0.5, float(3-1));
+                    t += unity_valueNoise(vec2(UV.x*Scale/freq, UV.y*Scale/freq))*amp;
+
+                    freq = pow(2.0, float(2));
+                    amp = pow(0.5, float(3-2));
+                    t += unity_valueNoise(vec2(UV.x*Scale/freq, UV.y*Scale/freq))*amp;
+
+                    return t;
+                }
+        
+            `;
+    }
+
+    //sets each vertex's position to the its position + the red value of our texture
+    vertex_glsl_code() {
+        return this.shared_glsl_code() + `
+                attribute vec3 position;
+                attribute vec2 texture_coord;                         
+                uniform mat4 projection_camera_model_transform;
+                uniform mat4 model_transform;
+                
+                void main(){
+                    noisePos = (model_transform * vec4(position, 1.0)).xz;
+                    float alpha = (layer / 10.0) * Unity_SimpleNoise_float(noisePos + vec2(time * 2.0, time * 2.0), 1.0);
+                    gl_Position = projection_camera_model_transform * vec4(position.x + (0.2 * alpha), position.y + (0.04 * layer), position.z + (0.2 * alpha), 1.0);
+                    f_tex_coord = texture_coord;
+                }`;
+    }
+
+    //sets each pixel's color
+    fragment_glsl_code() {
+        return this.shared_glsl_code() + `
+                uniform vec4 color;
+                void main(){
+                    gl_FragColor = color;
+                    float alpha = pow(Unity_SimpleNoise_float(noisePos, 30.0), 2.0 * (layer / 10.0));
+                    if (alpha < 0.3){
+                        alpha = 0.0;
+                    }
+                    
+                    vec4 tex_color = texture2D(texture, f_tex_coord);
+                    gl_FragColor.w = min(alpha, tex_color.r);
+                }`;
+    }
+}
+
 class Phong_Water_Shader extends Shader{
+
+    constructor(num_lights = 2) {
+        super();
+        this.num_lights = num_lights;
+    }
+
+    update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
+        const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform], PCM = P.times(C).times(M);
+        context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
+        context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform.transposed()));
+        context.uniform1f(gpu_addresses.time, graphics_state.animation_time / 1000);
+        context.uniform4fv(gpu_addresses.shape_color, material.color);
+        context.uniform1f(gpu_addresses.ambient, material.ambient);
+        context.uniform1f(gpu_addresses.diffusivity, material.diffusivity);
+        context.uniform1f(gpu_addresses.specularity, material.specularity);
+        context.uniform1f(gpu_addresses.smoothness, material.smoothness);
+        const O = vec4(0, 0, 0, 1), camera_center = graphics_state.camera_transform.times(O).to3();
+        context.uniform3fv(gpu_addresses.camera_center, camera_center);
+        const squared_scale = model_transform.reduce(
+            (acc, r) => {
+                return acc.plus(vec4(...r).times_pairwise(r))
+            }, vec4(0, 0, 0, 0)).to3();
+        context.uniform3fv(gpu_addresses.squared_scale, squared_scale);
+
+        if (!graphics_state.lights.length)
+            return;
+
+        const light_positions_flattened = [], light_colors_flattened = [];
+        for (let i = 0; i < 4 * graphics_state.lights.length; i++) {
+            light_positions_flattened.push(graphics_state.lights[Math.floor(i / 4)].position[i % 4]);
+            light_colors_flattened.push(graphics_state.lights[Math.floor(i / 4)].color[i % 4]);
+        }
+        context.uniform4fv(gpu_addresses.light_positions_or_vectors, light_positions_flattened);
+        context.uniform4fv(gpu_addresses.light_colors, light_colors_flattened);
+        context.uniform1fv(gpu_addresses.light_attenuation_factors, graphics_state.lights.map(l => l.attenuation));
+    }
+
+    shared_glsl_code() {
+        return `precision mediump float;
+                varying vec2 noisePos;
+                uniform float time;
+                
+                vec2 voronoiSRand(vec2 value){
+                  return vec2(sin(fract(sin(dot(sin(value), vec2(12.989, 78.233))) * 143758.5453) * (time + 150.0)) * 0.5 + 0.5, 
+                      cos(fract(sin(dot(sin(value), vec2(39.346, 11.135))) * 143758.5453) * (time + 13.0)) * 0.5 + 0.5);
+                }
+                
+                float voronoi(vec2 pos){
+                  vec2 baseCell = floor(pos);
+                  float minDist = 10.0;
+                  
+                  for (int i = -1; i <= 1; i++){
+                    for (int j = -1; j <= 1; j++){
+                      vec2 currentCell = baseCell + vec2(i, j);
+                      vec2 posInCell = currentCell + voronoiSRand(currentCell);
+                      minDist = min(distance(posInCell, pos), minDist);
+                    }
+                  }
+                  return minDist;
+                }
+                
+                const int N_LIGHTS = ` + this.num_lights + `;
+                uniform float ambient, diffusivity, specularity, smoothness;
+                uniform vec4 light_positions_or_vectors[N_LIGHTS], light_colors[N_LIGHTS];
+                uniform float light_attenuation_factors[N_LIGHTS];
+                uniform vec3 squared_scale, camera_center;
+                uniform vec4 shape_color;
+        
+                varying vec3 N, vertex_worldspace;
+                vec3 phong_model_lights( vec3 N, vec3 vertex_worldspace ){                                        
+                    vec3 E = normalize( camera_center - vertex_worldspace );
+                    vec3 result = vec3( 0.0 );
+                    for(int i = 0; i < N_LIGHTS; i++){
+                        vec3 surface_to_light_vector = light_positions_or_vectors[i].xyz - 
+                                                       light_positions_or_vectors[i].w * vertex_worldspace;                                             
+                        float distance_to_light = length( surface_to_light_vector );
+        
+                        vec3 L = normalize( surface_to_light_vector );
+                        vec3 H = normalize( L + E );
+
+                        float diffuse  =      max( dot( N, L ), 0.0 );
+                        float specular = pow( max( dot( N, H ), 0.0 ), smoothness );
+                        float attenuation = 1.0 / (1.0 + light_attenuation_factors[i] * distance_to_light * distance_to_light);
+                        
+                        vec3 light_contribution = shape_color.xyz * light_colors[i].xyz * diffusivity * diffuse
+                                                                  + light_colors[i].xyz * specularity * specular;
+                        result += attenuation * light_contribution;
+                      }
+                    return result;
+                  }
+            `;
+    }
+
+    vertex_glsl_code() {
+        return this.shared_glsl_code() + `
+                attribute vec3 position;
+                attribute vec3 normal;                         
+                uniform mat4 projection_camera_model_transform;
+                uniform mat4 model_transform;
+                
+                void main(){
+                    noisePos = (model_transform * vec4(position.x, position.y, position.z, 1.0)).xz * (2.0 / 1.0);
+                    float noise = voronoi(noisePos);
+                    gl_Position = projection_camera_model_transform * vec4( position.x, position.y + (noise / 10.0), position.z, 1.0 );
+                    N = normalize( mat3( model_transform ) * vec3(normal.x, normal.y + (noise / 10.0), normal.z) / squared_scale);
+                    vertex_worldspace = (model_transform * vec4( position, 1.0 )).xyz;
+                }`;
+    }
+
+    //sets each pixel's color
+    fragment_glsl_code() {
+        return this.shared_glsl_code() + `
+                
+                void main(){
+                    gl_FragColor = vec4(shape_color.x * ambient, shape_color.y * ambient, shape_color.z * ambient, 0.95);
+                    vec3 lighting = phong_model_lights( normalize( N ), vertex_worldspace);
+                    float noise = pow(voronoi(noisePos), 4.0);
+                    gl_FragColor.xyz += lighting + noise * lighting * 3.0 + noise * (ambient / 3.0);
+                }`;
+    }
+}
+
+class Phong_Water_Shader_Caustics_Attempt extends Shader{
 
     constructor(num_lights = 2) {
         super();
@@ -281,8 +618,9 @@ class Phong_Water_Shader extends Shader{
                 
                 void main(){
                     noisePos = (model_transform * vec4(position.x, position.y, position.z, 1.0)).xz * (2.0 / 1.0);
-                    gl_Position = projection_camera_model_transform * vec4( position.x, position.y + (voronoi(noisePos) / 10.0), position.z, 1.0 );
-                    N = normalize( mat3( model_transform ) * normal / squared_scale);
+                    float noise = min(voronoi(noisePos), voronoi(vec2(noisePos.x * 3.0, noisePos.y * 2.5)));
+                    gl_Position = projection_camera_model_transform * vec4( position.x, position.y + (noise / 10.0), position.z, 1.0 );
+                    N = normalize( mat3( model_transform ) * vec3(normal.x, normal.y + (noise / 10.0), normal.z) / squared_scale);
                     vertex_worldspace = (model_transform * vec4( position, 1.0 )).xyz;
                 }`;
     }
@@ -294,7 +632,8 @@ class Phong_Water_Shader extends Shader{
                 void main(){
                     gl_FragColor = vec4(shape_color.x * ambient, shape_color.y * ambient, shape_color.z * ambient, 0.95);
                     vec3 lighting = phong_model_lights( normalize( N ), vertex_worldspace);
-                    gl_FragColor.xyz += lighting + (pow(voronoi(noisePos), 3.0)) * lighting * 3.0 + (pow(voronoi(noisePos), 3.0)) * (ambient / 3.0);
+                    float noise = pow(min(voronoi(noisePos / 2.0), voronoi(vec2((noisePos.x / 3.0) + 10.0 , (noisePos.y / 3.0) + 10.0))), 3.0);
+                    gl_FragColor.xyz += lighting + noise * lighting * 3.0 + noise * (ambient / 3.0);
                 }`;
     }
 }
@@ -575,10 +914,18 @@ class Base_Scene extends Scene {
             funny: new Material(new defs.Funny_Shader()),
             water: new Material(new Water_Shader(), {color: hex_color("#4e6ef6")}),
         };
+
         this.white = new Material(new defs.Basic_Shader());
+
+        this.grassMats = [];
+        for (let i = 0; i < 16; i++){
+            this.grassMats.push(new Material(new Grass_Shader_Texture_Painting(i), {color: hex_color("#19560a"), texture: this.texture}));
+        }
 
         this.water_plane = new Scene_Object(new Triangle_Strip_Plane(15,15, Vector3.create(0,0,0), this.planeDensity), Mat4.translation(0,-0.7,0), this.materials.phong_water, "TRIANGLE_STRIP");
         this.plane = new Scene_Object(new Triangle_Strip_Plane(this.planeLength,this.planeWidth, Vector3.create(0,0,0), this.planeDensity), Mat4.translation(0,0,0), this.materials.plastic, "TRIANGLE_STRIP");
+        this.grass_plane = new Scene_Object(new Triangle_Strip_Plane(this.planeLength,this.planeWidth, Vector3.create(0,0,0), 1), Mat4.translation(0,0,0), this.materials.plastic, "TRIANGLE_STRIP");
+        this.ground_plane = new Scene_Object(new Triangle_Strip_Plane(this.planeLength,this.planeWidth, Vector3.create(0,0,0), this.planeDensity), Mat4.translation(0,0,0), this.materials.plastic, "TRIANGLE_STRIP");
     }
 
     display(context, program_state) {
@@ -693,7 +1040,15 @@ export class Test extends Base_Scene {
         //draw the plane and axis (axis was just so I could see if it is actually centered, I should honestly just remove it)
         let model_transform = Mat4.identity();
         this.shapes.axis.draw(context, program_state, model_transform, this.materials.plastic);
-        this.plane.drawObject(context, program_state);
-        this.water_plane.drawObject(context, program_state);
+
+        //this.plane.drawObject(context, program_state);
+        //this.ground_plane.drawObject(context, program_state);
+        //this.water_plane.drawObject(context, program_state);
+
+        for (let i = 0; i < this.grassMats.length; i++){
+            this.grass_plane.material = this.grassMats[i];
+            this.grass_plane.drawObject(context, program_state);
+        }
+
     }
 }
