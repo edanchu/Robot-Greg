@@ -68,6 +68,9 @@ class Cube_Single_Strip extends Shape {
 class Triangle_Strip_Plane extends Shape{
     constructor(length, width, origin, density){
         super("position", "normal", "texture_coord");
+        this.length = length;
+        this.width = width;
+        this.density = density;
         let denseWidth = width * density;
         let denseLength = length * density;
         //create vertex positions and texture coords. texture coords go from 0,1 in top left to 1,0 in bottom right and are
@@ -76,10 +79,9 @@ class Triangle_Strip_Plane extends Shape{
             for (let x = 0; x < denseLength; x++){
                 this.arrays.position.push(Vector3.create(x/density - length/2 + origin[0] + 1,origin[1],z/density - width/2 + origin[2] + 1));
                 this.arrays.texture_coord.push(Vector.create(x/denseLength,1 - (z/denseWidth)));
+                this.arrays.normal.push(Vector3.create(x/density - length/2 + origin[0] + 1,origin[1],z/density - width/2 + origin[2] + 1));
             }
         }
-        //copy position array into the normals array. I think there is probably a better way to do this, but I'm not sure since I'm crap at javascript
-        this.arrays.normal.push.apply(this.arrays.normal, this.arrays.position);
 
         //create the index buffer by connecting points by right hand rule starting by top left, then one under, then one left of the original point
         //in order for the triangle strips to work need to double up on the last index in every row, and the one right after. I can explain why in person
@@ -101,18 +103,28 @@ class Triangle_Strip_Plane extends Shape{
         //dest is the destination point made by moving the origin's location by distanceVec in the direction's direction
         //distance is the distance between this destination point and the vertex
         for (let i = 0; i < this.arrays.position.length; i++){
-            let distanceVec = Vector3.create(origin[0], origin[1], origin[2]).minus(Vector3.create(this.arrays.position[i][0], this.arrays.position[i][1], this.arrays.position[i][2]));
-            let dest = (Vector3.create(direction[0], direction[1], direction[2]).times(distanceVec.norm())).plus(Vector3.create(origin[0], origin[1], origin[2]));
-            let distance = Math.abs((dest.minus(Vector3.create(this.arrays.position[i][0], this.arrays.position[i][1], this.arrays.position[i][2])).norm()));
+            let distanceNoDir = Vector3.create(origin[0], origin[1], origin[2]).minus(Vector3.create(this.arrays.position[i][0], 0, this.arrays.position[i][2])).norm();
+            let dest = Vector3.create(direction[0], direction[1], direction[2]).times(distanceNoDir).plus(Vector3.create(origin[0], origin[1], origin[2]));
+            let distance = Math.abs((dest.minus(Vector3.create(this.arrays.position[i][0], 0, this.arrays.position[i][2])).norm()));
 
             if (distance < minDistance){
                 minDistance = distance;
                 finalPos = Vector3.create(this.arrays.position[i][0], this.arrays.position[i][1], this.arrays.position[i][2]);
             }
         }
-
         return finalPos;
+    }
 
+    updateVertexHeight(x, z, newHeight){
+        if ((x + (z * this.width * this.density)) < this.arrays.position.length && (x + (z * this.width * this.density)) >= 0) {
+            this.arrays.position[x + (z * this.width * this.density)][1] = newHeight;
+        }
+    }
+
+    addVertexHeight(x, z, newHeight){
+        if ((x + (z * this.width * this.density)) < this.arrays.position.length && (x + (z * this.width * this.density)) >= 0) {
+            this.arrays.position[x + (z * this.width * this.density)][1] += newHeight;
+        }
     }
 }
 
@@ -121,8 +133,7 @@ class Triangle_Strip_Plane extends Shape{
 // and one as the actual texture we want to be displayed. To learn how these work check out the examples in common.js
 class Offset_shader extends Shader {
     update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
-        const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform],
-            PCM = P.times(C).times(M);
+        const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform], PCM = P.times(C).times(M);
         context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
         context.uniform4fv(gpu_addresses.color, material.color);
 
@@ -148,8 +159,8 @@ class Offset_shader extends Shader {
                 
                 void main(){
                     vec4 tex_color = texture2D(texture, texture_coord);
-                    gl_Position = projection_camera_model_transform * vec4( position.x, position.y + tex_color.r, position.z, 1.0 );
-                    //gl_Position = projection_camera_model_transform * vec4( position.x, position.y, position.z, 1.0 );
+                    //gl_Position = projection_camera_model_transform * vec4( position.x, position.y + tex_color.r, position.z, 1.0 );
+                    gl_Position = projection_camera_model_transform * vec4( position.x, position.y, position.z, 1.0 );
                     f_tex_coord = texture_coord;
                 }`;
     }
@@ -333,7 +344,7 @@ class Base_Scene extends Scene {
         //define how long and wide we want our plane to be. the density gives extra resolution by making more triangles in the same amount of space
         this.planeWidth = 20;
         this.planeLength = 20;
-        this.density = 7;
+        this.planeDensity = 7;
 
         //declare a 256 by 256 array that will be used as our texture to store height data. for now it also has values in the other color channels
         //since it is being used to color the plane as well, but that will change. Each color is from 0 to 255
@@ -354,13 +365,17 @@ class Base_Scene extends Scene {
             'outline': new Cube_Outline(),
             'single_strip' : new Cube_Single_Strip(),
             //creates our custom plane with the previously declared length, width, density, and an origin of (0,0,0)
-            'plane' : new Triangle_Strip_Plane(this.planeLength,this.planeWidth, Vector3.create(0,0,0), this.density),
+            'plane' : new Triangle_Strip_Plane(this.planeLength,this.planeWidth, Vector3.create(0,0,0), this.planeDensity),
             'axis' : new defs.Axis_Arrows()
         };
 
         this.materials = {
             plastic: new Material(new defs.Phong_Shader(),
                 {ambient: .4, diffusivity: .6, color: hex_color("#ffffff")}),
+            texturedPhong: new Material(new defs.Textured_Phong(),
+                {ambient: 0.4, diffusivity: 0.6, specularity: 0.5, color: hex_color("#494949"), texture: new Texture("assets/rgb.jpg")}),
+            bump: new Material(new defs.Textured_Phong(),
+                {ambient: .4, diffusivity: .6, color: hex_color("#ffffff"), texture: new Texture("assets/rgb.jpg")}),
             //creates a material based on our texture. For now it also takes a color variable, but I think we can get rid of that at some point
             offset: new Material(new Offset_shader(), {color: hex_color("#2b3b86"), texture: this.texture}),
         };
@@ -376,8 +391,7 @@ class Base_Scene extends Scene {
         program_state.projection_transform = Mat4.perspective(
             Math.PI/4 , context.width / context.height, 1, 100);
 
-        const light_position = vec4(0, 5, 5, 1);
-        program_state.lights = [new Light(light_position, color(1, 1, 1, 1), 1000)];
+        program_state.lights = [new Light(vec4(5, 3, 5, 0), color(3, 0, 0, 1), 1000), new Light(vec4(-5, 3, -5, 0), color(0.5, 1, 1, 1), 1000)];
     }
 }
 
@@ -403,14 +417,12 @@ export class Test extends Base_Scene {
         //we now get two point in clip space, on on the near part of the cube, and one on the far part of the cube
         let mousePointNear = Vector.create(mousePosPercent[0], mousePosPercent[1], -1, 1);
         let worldSpaceNear = transformMatrix.times(mousePointNear);
-        //this is the world space coordinates of the near point. We divide by the last homogenous value because of the perspective transform. I am not 100% sure why we need this though
-        //         //I need to look more into this and as the TA as well
+        //this is the world space coordinates of the near point. We divide by the last homogenous value because of the perspective transform
         worldSpaceNear = Vector.create(worldSpaceNear[0] / worldSpaceNear[3], worldSpaceNear[1] / worldSpaceNear[3], worldSpaceNear[2] / worldSpaceNear[3], 1);
 
         let mousePointFar = Vector.create(mousePosPercent[0], mousePosPercent[1], 1, 1);
         let worldSpaceFar = transformMatrix.times(mousePointFar);
-        //this is the world space coordinates of the far point. We divide by the last homogenous value because of the perspective transform. I am not 100% sure why we need this though
-        //I need to look more into this and as the TA as well
+        //this is the world space coordinates of the far point. We divide by the last homogenous value because of the perspective transform
         worldSpaceFar = Vector.create(worldSpaceFar[0] / worldSpaceFar[3], worldSpaceFar[1] / worldSpaceFar[3], worldSpaceFar[2] / worldSpaceFar[3], 1);
 
         //this calls the intersection function of the plane shape to find which vertex is nearest to the mouse click. the function takes
@@ -425,38 +437,43 @@ export class Test extends Base_Scene {
         let textureLocPercent = Vector.create((location[0]-1) / (this.planeWidth / 2), (location[2]-1) / (this.planeLength / 2));
         //using the percentage we can find what z and x coordinates that would be given 128 rows to the right and down from the origin
         let textureLoc = Vector.create(Math.ceil(textureLocPercent[0] * 128) + 128, Math.ceil(textureLocPercent[1] * 128) + 128);
-        //translate from the z and x coordinates into the texture and set the value to 255 using bresnaham's circle algo
-        for (let i = 1; i <= brushRadius; i++){
-            this.bresnahamCircleAlgo(textureLoc, 0, i, 3 - (2*brushRadius), 1 - Math.max(0.5, (i / brushRadius)));
+
+        let strength = 20;
+        for (let i = 0; i < brushRadius; i++) {
+            for (let dy = 0; dy < i; dy++) {
+                let dx = 0;
+                let sq = (i * i) - (dy * dy);
+                while ((dx * dx) < sq) {
+                    this.offsets[((dx + textureLoc[0]) * 4) + ((dy + textureLoc[1]) * 4 * 256)] += strength;
+                    this.offsets[((dx + textureLoc[0]) * 4) + ((-dy + textureLoc[1] - 1) * 4 * 256)] += strength;
+                    this.offsets[((-dx + textureLoc[0] - 1) * 4) + ((dy + textureLoc[1]) * 4 * 256)] += strength;
+                    this.offsets[((-dx + textureLoc[0] - 1) * 4) + ((-dy + textureLoc[1] - 1) * 4 * 256)] += strength;
+                    dx++;
+                }
+            }
         }
     }
 
-    bresnahamCircleAlgo(origin, x, z, decisionParameter, intensity){
-        if (x > z)
-            return;
+    drawnOnPlane(location, brushRadius) {
+        //this find what percentage to the edge the location given is. I currently treat the texture as taking up the same world space size as the size of the plane
+        let planeLocPercent = Vector.create((location[0]-1) / (this.planeWidth / 2), (location[2]-1) / (this.planeLength / 2));
+        //using the percentage we can find what z and x coordinates that would be given 128 rows to the right and down from the origin
+        let planeLoc = Vector.create(Math.ceil(planeLocPercent[0] * (this.planeWidth * this.planeDensity / 2)) + (this.planeWidth * this.planeDensity / 2), Math.ceil(planeLocPercent[1] * (this.planeWidth * this.planeDensity / 2)) + (this.planeWidth * this.planeDensity / 2));
 
-        let colorInterval = 60;
-
-        this.offsets[((x + origin[0])*4) + ((z + origin[1]) * 4 * 256)] += colorInterval * intensity;
-        this.offsets[((x + origin[0])*4) + ((-z + origin[1]) * 4 * 256)] += colorInterval * intensity;
-        this.offsets[((-x + origin[0])*4) + ((z + origin[1]) * 4 * 256)] += colorInterval * intensity;
-        this.offsets[((-x + origin[0])*4) + ((-z + origin[1]) * 4 * 256)] += colorInterval * intensity;
-        this.offsets[((z + origin[0])*4) + ((x + origin[1]) * 4 * 256)] += colorInterval * intensity;
-        this.offsets[((-z + origin[0])*4) + ((x + origin[1]) * 4 * 256)] += colorInterval * intensity;
-        this.offsets[((-z + origin[0])*4) + ((-x + origin[1]) * 4 * 256)] += colorInterval * intensity;
-        this.offsets[((z + origin[0])*4) + ((-x + origin[1]) * 4 * 256)] += colorInterval * intensity;
-
-
-        if (decisionParameter < 0){
-            decisionParameter = decisionParameter + (4 * x) + 6
-            x += 1;
+        let strength = 0.05 / Math.max((brushRadius - 6), 1);
+        for (let i = 0; i < brushRadius; i++) {
+            for (let dy = 0; dy < i; dy++) {
+                let dx = 0;
+                let sq = (i * i) - (dy * dy);
+                while ((dx * dx) < sq) {
+                    this.shapes.plane.addVertexHeight(dx + planeLoc[0], dy + planeLoc[1], strength);
+                    this.shapes.plane.addVertexHeight(dx + planeLoc[0], -dy + planeLoc[1] - 1, strength);
+                    this.shapes.plane.addVertexHeight(-dx + planeLoc[0] - 1, dy + planeLoc[1], strength);
+                    this.shapes.plane.addVertexHeight(-dx + planeLoc[0] - 1, -dy + planeLoc[1] - 1, strength);
+                    dx++;
+                }
+            }
         }
-        else {
-            decisionParameter = decisionParameter + (4 * (x - z)) + 10
-            x += 1;
-            z -= 1;
-        }
-        this.bresnahamCircleAlgo(origin, x, z, decisionParameter, intensity);
     }
 
     display(context, program_state) {
@@ -467,14 +484,15 @@ export class Test extends Base_Scene {
             //find the location we are trying to paint at
             let dest = this.getClosestLocOnPlane(context, program_state);
             //paint on the texture with a brush radius of 10 (the brush radius doesn't actually do anything yet)
-            this.drawnOnTexture(dest, 8);
-            //send the newly updated texture to the gpu
+            this.drawnOnTexture(dest, 12);
             this.texture.copy_onto_graphics_card(context.context, false);
+            this.drawnOnPlane(dest, 8);
+            this.shapes.plane.copy_onto_graphics_card(context.context);
         }
 
         //draw the plane and axis (axis was just so I could see if it is actually centered, I should honestly just remove it)
         let model_transform = Mat4.identity();
-        this.shapes.plane.draw(context, program_state, model_transform, this.materials.offset, "TRIANGLE_STRIP");
+        this.shapes.plane.draw(context, program_state, model_transform, this.materials.texturedPhong, "TRIANGLE_STRIP");
         this.shapes.axis.draw(context, program_state, model_transform, this.materials.plastic);
     }
 }
