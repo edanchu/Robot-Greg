@@ -133,8 +133,7 @@ class Triangle_Strip_Plane extends Shape{
 // and one as the actual texture we want to be displayed. To learn how these work check out the examples in common.js
 class Offset_shader extends Shader {
     update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
-        const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform],
-            PCM = P.times(C).times(M);
+        const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform], PCM = P.times(C).times(M);
         context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
         context.uniform4fv(gpu_addresses.color, material.color);
 
@@ -373,6 +372,10 @@ class Base_Scene extends Scene {
         this.materials = {
             plastic: new Material(new defs.Phong_Shader(),
                 {ambient: .4, diffusivity: .6, color: hex_color("#ffffff")}),
+            texturedPhong: new Material(new defs.Textured_Phong(),
+                {ambient: 0.4, diffusivity: 0.6, specularity: 0.5, color: hex_color("#494949"), texture: new Texture("assets/rgb.jpg")}),
+            bump: new Material(new defs.Textured_Phong(),
+                {ambient: .4, diffusivity: .6, color: hex_color("#ffffff"), texture: new Texture("assets/rgb.jpg")}),
             //creates a material based on our texture. For now it also takes a color variable, but I think we can get rid of that at some point
             offset: new Material(new Offset_shader(), {color: hex_color("#2b3b86"), texture: this.texture}),
         };
@@ -388,7 +391,7 @@ class Base_Scene extends Scene {
         program_state.projection_transform = Mat4.perspective(
             Math.PI/4 , context.width / context.height, 1, 100);
 
-        program_state.lights = [new Light(vec4(5, 5, 5, 1), color(0.5, 1, 1, 1), 1000), new Light(vec4(-5, 10, 5, 1), color(1, 0.5, 1, 1), 1000)];
+        program_state.lights = [new Light(vec4(5, 3, 5, 0), color(3, 0, 0, 1), 1000), new Light(vec4(-5, 3, -5, 0), color(0.5, 1, 1, 1), 1000)];
     }
 }
 
@@ -489,7 +492,7 @@ export class Test extends Base_Scene {
 
         //draw the plane and axis (axis was just so I could see if it is actually centered, I should honestly just remove it)
         let model_transform = Mat4.identity();
-        this.shapes.plane.draw(context, program_state, model_transform, this.materials.offset, "TRIANGLE_STRIP");
+        this.shapes.plane.draw(context, program_state, model_transform, this.materials.texturedPhong, "TRIANGLE_STRIP");
         this.shapes.axis.draw(context, program_state, model_transform, this.materials.plastic);
     }
 }
