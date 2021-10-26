@@ -123,7 +123,7 @@ class Triangle_Strip_Plane extends Shape{
 
     addVertexHeight(x, z, newHeight){
         if ((x + (z * this.width * this.density)) < this.arrays.position.length && (x + (z * this.width * this.density)) >= 0) {
-            this.arrays.position[x + (z * this.width * this.density)][1] += newHeight;
+            this.arrays.position[x + (z * this.width * this.density)][1] -= newHeight;
         }
     }
 }
@@ -177,6 +177,186 @@ class Offset_shader extends Shader {
     }
 }
 
+class Phong_Water_Shader extends Shader{
+
+    constructor(num_lights = 2) {
+        super();
+        this.num_lights = num_lights;
+    }
+
+    update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
+        const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform], PCM = P.times(C).times(M);
+        context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
+        context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform.transposed()));
+        context.uniform1f(gpu_addresses.time, graphics_state.animation_time / 1000);
+        context.uniform4fv(gpu_addresses.shape_color, material.color);
+        context.uniform1f(gpu_addresses.ambient, material.ambient);
+        context.uniform1f(gpu_addresses.diffusivity, material.diffusivity);
+        context.uniform1f(gpu_addresses.specularity, material.specularity);
+        context.uniform1f(gpu_addresses.smoothness, material.smoothness);
+        const O = vec4(0, 0, 0, 1), camera_center = graphics_state.camera_transform.times(O).to3();
+        context.uniform3fv(gpu_addresses.camera_center, camera_center);
+        const squared_scale = model_transform.reduce(
+            (acc, r) => {
+                return acc.plus(vec4(...r).times_pairwise(r))
+            }, vec4(0, 0, 0, 0)).to3();
+        context.uniform3fv(gpu_addresses.squared_scale, squared_scale);
+
+        if (!graphics_state.lights.length)
+            return;
+
+        const light_positions_flattened = [], light_colors_flattened = [];
+        for (let i = 0; i < 4 * graphics_state.lights.length; i++) {
+            light_positions_flattened.push(graphics_state.lights[Math.floor(i / 4)].position[i % 4]);
+            light_colors_flattened.push(graphics_state.lights[Math.floor(i / 4)].color[i % 4]);
+        }
+        context.uniform4fv(gpu_addresses.light_positions_or_vectors, light_positions_flattened);
+        context.uniform4fv(gpu_addresses.light_colors, light_colors_flattened);
+        context.uniform1fv(gpu_addresses.light_attenuation_factors, graphics_state.lights.map(l => l.attenuation));
+    }
+
+    shared_glsl_code() {
+        return `precision mediump float;
+                varying vec2 noisePos;
+                uniform float time;
+                
+                vec2 voronoiSRand(vec2 value){
+                  return vec2(sin(fract(sin(dot(sin(value), vec2(12.989, 78.233))) * 143758.5453) * (time + 150.0)) * 0.5 + 0.5, 
+                      cos(fract(sin(dot(sin(value), vec2(39.346, 11.135))) * 143758.5453) * (time + 13.0)) * 0.5 + 0.5);
+                }
+                
+                float voronoi(vec2 pos){
+                  vec2 baseCell = floor(pos);
+                  float minDist = 10.0;
+                  
+                  for (int i = -1; i <= 1; i++){
+                    for (int j = -1; j <= 1; j++){
+                      vec2 currentCell = baseCell + vec2(i, j);
+                      vec2 posInCell = currentCell + voronoiSRand(currentCell);
+                      minDist = min(distance(posInCell, pos), minDist);
+                    }
+                  }
+                  return minDist;
+                }
+                
+                const int N_LIGHTS = ` + this.num_lights + `;
+                uniform float ambient, diffusivity, specularity, smoothness;
+                uniform vec4 light_positions_or_vectors[N_LIGHTS], light_colors[N_LIGHTS];
+                uniform float light_attenuation_factors[N_LIGHTS];
+                uniform vec3 squared_scale, camera_center;
+                uniform vec4 shape_color;
+        
+                varying vec3 N, vertex_worldspace;
+                vec3 phong_model_lights( vec3 N, vec3 vertex_worldspace ){                                        
+                    vec3 E = normalize( camera_center - vertex_worldspace );
+                    vec3 result = vec3( 0.0 );
+                    for(int i = 0; i < N_LIGHTS; i++){
+                        vec3 surface_to_light_vector = light_positions_or_vectors[i].xyz - 
+                                                       light_positions_or_vectors[i].w * vertex_worldspace;                                             
+                        float distance_to_light = length( surface_to_light_vector );
+        
+                        vec3 L = normalize( surface_to_light_vector );
+                        vec3 H = normalize( L + E );
+
+                        float diffuse  =      max( dot( N, L ), 0.0 );
+                        float specular = pow( max( dot( N, H ), 0.0 ), smoothness );
+                        float attenuation = 1.0 / (1.0 + light_attenuation_factors[i] * distance_to_light * distance_to_light);
+                        
+                        vec3 light_contribution = shape_color.xyz * light_colors[i].xyz * diffusivity * diffuse
+                                                                  + light_colors[i].xyz * specularity * specular;
+                        result += attenuation * light_contribution;
+                      }
+                    return result;
+                  }
+            `;
+    }
+
+    //sets each vertex's position to the its position + the red value of our texture
+    vertex_glsl_code() {
+        return this.shared_glsl_code() + `
+                attribute vec3 position;
+                attribute vec3 normal;                         
+                uniform mat4 projection_camera_model_transform;
+                uniform mat4 model_transform;
+                
+                void main(){
+                    noisePos = (model_transform * vec4(position.x, position.y, position.z, 1.0)).xz * (2.0 / 1.0);
+                    gl_Position = projection_camera_model_transform * vec4( position.x, position.y + (voronoi(noisePos) / 10.0), position.z, 1.0 );
+                    N = normalize( mat3( model_transform ) * normal / squared_scale);
+                    vertex_worldspace = (model_transform * vec4( position, 1.0 )).xyz;
+                }`;
+    }
+
+    //sets each pixel's color
+    fragment_glsl_code() {
+        return this.shared_glsl_code() + `
+                
+                void main(){
+                    gl_FragColor = vec4(shape_color.x * ambient, shape_color.y * ambient, shape_color.z * ambient, 0.95);
+                    vec3 lighting = phong_model_lights( normalize( N ), vertex_worldspace);
+                    gl_FragColor.xyz += lighting + (pow(voronoi(noisePos), 3.0)) * lighting * 3.0 + (pow(voronoi(noisePos), 3.0)) * (ambient / 3.0);
+                }`;
+    }
+}
+
+class Water_Shader extends Shader{
+
+    update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
+        const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform], PCM = P.times(C).times(M);
+        context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
+        context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform.transposed()));
+        context.uniform1f(gpu_addresses.time, graphics_state.animation_time / 1000);
+        context.uniform4fv(gpu_addresses.shape_color, material.color);
+    }
+
+    shared_glsl_code() {
+        return `precision mediump float;
+                varying vec2 noisePos;
+                uniform float time;
+                uniform vec4 shape_color;
+                
+                vec2 voronoiSRand(vec2 value){
+                  return vec2(sin(fract(sin(dot(sin(value), vec2(12.989, 78.233))) * 143758.5453) * (time + 150.0)) * 0.5 + 0.5, 
+                      cos(fract(sin(dot(sin(value), vec2(39.346, 11.135))) * 143758.5453) * (time + 13.0)) * 0.5 + 0.5);
+                }
+                
+                float voronoi(vec2 pos){
+                  vec2 baseCell = floor(pos);
+                  float minDist = 10.0;
+                  
+                  for (int i = -1; i <= 1; i++){
+                    for (int j = -1; j <= 1; j++){
+                      vec2 currentCell = baseCell + vec2(i, j);
+                      vec2 posInCell = currentCell + voronoiSRand(currentCell);
+                      minDist = min(distance(posInCell, pos), minDist);
+                    }
+                  }
+                  return minDist;
+                }
+            `;
+    }
+
+    //sets each vertex's position to the its position + the red value of our texture
+    vertex_glsl_code() {
+        return this.shared_glsl_code() + `
+                attribute vec3 position;
+                uniform mat4 projection_camera_model_transform;
+                uniform mat4 model_transform;
+                
+                void main(){
+                    noisePos = (model_transform * vec4(position.x, position.y, position.z, 1.0)).xz * (2.0 / 1.0);
+                    gl_Position = projection_camera_model_transform * vec4( position.x, position.y + (voronoi(noisePos) / 10.0), position.z, 1.0 );
+                }`;
+    }
+
+    //sets each pixel's color
+    fragment_glsl_code() {
+        return this.shared_glsl_code() + `
+                void main(){
+                    gl_FragColor = vec4(shape_color.xyz + (vec3(0.0,0.8, 0.6) * pow(voronoi(noisePos), 3.0)), 0.95);
+                }`;
+    }
+}
 //custom texture class that uses a software defined array as input instead of the html IMAGE object that the default class uses
 //need to pass in the length and width of the data as well as the data itself
 //most of this is documented in the tiny-graphics.js file, so I will just comment the changes I made from that
@@ -337,6 +517,19 @@ class Custom_Movement_Controls extends defs.Movement_Controls{
     }
 }
 
+class Scene_Object{
+    constructor(shape, transform, material, renderArgs = "TRIANGLES") {
+        this.shape = shape;
+        this.transform = transform;
+        this.material = material;
+        this.renderArgs = renderArgs;
+    }
+
+    drawObject(context, program_state){
+        this.shape.draw(context, program_state, this.transform, this.material, this.renderArgs);
+    }
+}
+
 class Base_Scene extends Scene {
     constructor() {
         super();
@@ -378,8 +571,14 @@ class Base_Scene extends Scene {
                 {ambient: .4, diffusivity: .6, color: hex_color("#ffffff"), texture: new Texture("assets/rgb.jpg")}),
             //creates a material based on our texture. For now it also takes a color variable, but I think we can get rid of that at some point
             offset: new Material(new Offset_shader(), {color: hex_color("#2b3b86"), texture: this.texture}),
+            phong_water: new Material(new Phong_Water_Shader(), {color: hex_color("#4e6ef6"), ambient: 0.2, diffusivity: 0.7, specularity: 0.03, smoothness: 100}),
+            funny: new Material(new defs.Funny_Shader()),
+            water: new Material(new Water_Shader(), {color: hex_color("#4e6ef6")}),
         };
         this.white = new Material(new defs.Basic_Shader());
+
+        this.water_plane = new Scene_Object(new Triangle_Strip_Plane(15,15, Vector3.create(0,0,0), this.planeDensity), Mat4.translation(0,-0.7,0), this.materials.phong_water, "TRIANGLE_STRIP");
+        this.plane = new Scene_Object(new Triangle_Strip_Plane(this.planeLength,this.planeWidth, Vector3.create(0,0,0), this.planeDensity), Mat4.translation(0,0,0), this.materials.plastic, "TRIANGLE_STRIP");
     }
 
     display(context, program_state) {
@@ -391,7 +590,7 @@ class Base_Scene extends Scene {
         program_state.projection_transform = Mat4.perspective(
             Math.PI/4 , context.width / context.height, 1, 100);
 
-        program_state.lights = [new Light(vec4(5, 3, 5, 0), color(3, 0, 0, 1), 1000), new Light(vec4(-5, 3, -5, 0), color(0.5, 1, 1, 1), 1000)];
+        program_state.lights = [new Light(vec4(7, 2, 7, 0), color(1.1, 1.1, 1.1, 1), 10000), new Light(vec4(-7, 2, -7, 0), color(0, 1, 0, 1), 10000)];
     }
 }
 
@@ -401,7 +600,8 @@ export class Test extends Base_Scene {
     }
 
     make_control_panel(context) {
-        this.key_triggered_button("Placeholder", ["c"], () => 1);
+        this.key_triggered_button("change water shader", ["p"], () => this.water_plane.material = (this.water_plane.material === this.materials.water) ? this.materials.phong_water:this.materials.water);
+
     }
 
     //helper function to get the location of the closest vertex on our plane to where the mouse is pointing
@@ -427,7 +627,7 @@ export class Test extends Base_Scene {
 
         //this calls the intersection function of the plane shape to find which vertex is nearest to the mouse click. the function takes
         //our mouse's location as the origin, and a vector direction to the world space location of the far coordinate
-        return this.shapes.plane.closestVertexToRay(worldSpaceNear, worldSpaceFar.minus(worldSpaceNear).normalized());
+        return this.plane.shape.closestVertexToRay(worldSpaceNear, worldSpaceFar.minus(worldSpaceNear).normalized());
     }
 
     //this function draws onto the heightmap texture when given a location to draw (in world space coordinates) and a brush radius.
@@ -466,10 +666,10 @@ export class Test extends Base_Scene {
                 let dx = 0;
                 let sq = (i * i) - (dy * dy);
                 while ((dx * dx) < sq) {
-                    this.shapes.plane.addVertexHeight(dx + planeLoc[0], dy + planeLoc[1], strength);
-                    this.shapes.plane.addVertexHeight(dx + planeLoc[0], -dy + planeLoc[1] - 1, strength);
-                    this.shapes.plane.addVertexHeight(-dx + planeLoc[0] - 1, dy + planeLoc[1], strength);
-                    this.shapes.plane.addVertexHeight(-dx + planeLoc[0] - 1, -dy + planeLoc[1] - 1, strength);
+                    this.plane.shape.addVertexHeight(dx + planeLoc[0], dy + planeLoc[1], strength);
+                    this.plane.shape.addVertexHeight(dx + planeLoc[0], -dy + planeLoc[1] - 1, strength);
+                    this.plane.shape.addVertexHeight(-dx + planeLoc[0] - 1, dy + planeLoc[1], strength);
+                    this.plane.shape.addVertexHeight(-dx + planeLoc[0] - 1, -dy + planeLoc[1] - 1, strength);
                     dx++;
                 }
             }
@@ -484,15 +684,16 @@ export class Test extends Base_Scene {
             //find the location we are trying to paint at
             let dest = this.getClosestLocOnPlane(context, program_state);
             //paint on the texture with a brush radius of 10 (the brush radius doesn't actually do anything yet)
-            this.drawnOnTexture(dest, 12);
+            this.drawnOnTexture(dest, 25);
             this.texture.copy_onto_graphics_card(context.context, false);
-            this.drawnOnPlane(dest, 8);
-            this.shapes.plane.copy_onto_graphics_card(context.context);
+            this.drawnOnPlane(dest, 20);
+            this.plane.shape.copy_onto_graphics_card(context.context);
         }
 
         //draw the plane and axis (axis was just so I could see if it is actually centered, I should honestly just remove it)
         let model_transform = Mat4.identity();
-        this.shapes.plane.draw(context, program_state, model_transform, this.materials.texturedPhong, "TRIANGLE_STRIP");
         this.shapes.axis.draw(context, program_state, model_transform, this.materials.plastic);
+        this.plane.drawObject(context, program_state);
+        this.water_plane.drawObject(context, program_state);
     }
 }
