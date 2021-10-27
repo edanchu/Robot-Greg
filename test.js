@@ -160,8 +160,8 @@ class Offset_shader extends Shader {
                 
                 void main(){
                     vec4 tex_color = texture2D(texture, texture_coord);
-                    //gl_Position = projection_camera_model_transform * vec4( position.x, position.y + tex_color.r, position.z, 1.0 );
-                    gl_Position = projection_camera_model_transform * vec4( position.x, position.y, position.z, 1.0 );
+                    gl_Position = projection_camera_model_transform * vec4( position.x, position.y + tex_color.r, position.z, 1.0 );
+                    //gl_Position = projection_camera_model_transform * vec4( position.x, position.y, position.z, 1.0 );
                     f_tex_coord = texture_coord;
                 }`;
     }
@@ -178,339 +178,7 @@ class Offset_shader extends Shader {
     }
 }
 
-class Grass_Shader_Sparse extends Shader {
-    constructor(layer) {
-        super();
-        this.layer = layer;
-    }
-
-    update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
-        const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform], PCM = P.times(C).times(M);
-        context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
-        context.uniform4fv(gpu_addresses.color, material.color);
-        context.uniform1f(gpu_addresses.time, graphics_state.animation_time / 1000.0);
-        context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform.transposed()));
-        context.uniform1f(gpu_addresses.layer, this.layer);
-    }
-
-    //glsl code that goes into both the vertex and fragment shaders. the code here gives them both the texture we uploaded to the gpu
-    shared_glsl_code() {
-        return `precision mediump float;
-        
-                varying vec2 noisePos;
-                uniform float time;
-                uniform float layer;
-                
-                float unity_noise_randomValue (vec2 uv){
-                    return fract(sin(dot(uv, vec2(12.9898, 78.233)))*43758.5453);
-                }
-
-                float unity_noise_interpolate (float a, float b, float t){
-                    return (1.0-t)*a + (t*b);
-                }
-
-                float unity_valueNoise (vec2 uv){
-                    vec2 i = floor(uv);
-                    vec2 f = fract(uv);
-                    f = f * f * (3.0 - 2.0 * f);
-
-                    uv = abs(fract(uv) - 0.5);
-                    vec2 c0 = i + vec2(0.0, 0.0);
-                    vec2 c1 = i + vec2(1.0, 0.0);
-                    vec2 c2 = i + vec2(0.0, 1.0);
-                    vec2 c3 = i + vec2(1.0, 1.0);
-                    float r0 = unity_noise_randomValue(c0);
-                    float r1 = unity_noise_randomValue(c1);
-                    float r2 = unity_noise_randomValue(c2);
-                    float r3 = unity_noise_randomValue(c3);
-
-                   float bottomOfGrid = unity_noise_interpolate(r0, r1, f.x);
-                   float topOfGrid = unity_noise_interpolate(r2, r3, f.x);
-                   float t = unity_noise_interpolate(bottomOfGrid, topOfGrid, f.y);
-                   return t;
-                }
-
-                float Unity_SimpleNoise_float(vec2 UV, float Scale){
-                    float t = 0.0;
-
-                    float freq = pow(2.0, float(0));
-                    float amp = pow(0.5, float(3-0));
-                    t += unity_valueNoise(vec2(UV.x*Scale/freq, UV.y*Scale/freq))*amp;
-
-                    freq = pow(2.0, float(1));
-                    amp = pow(0.5, float(3-1));
-                    t += unity_valueNoise(vec2(UV.x*Scale/freq, UV.y*Scale/freq))*amp;
-
-                    freq = pow(2.0, float(2));
-                    amp = pow(0.5, float(3-2));
-                    t += unity_valueNoise(vec2(UV.x*Scale/freq, UV.y*Scale/freq))*amp;
-                    
-                    return t;
-                }
-               
-                float posInCellNoise(vec2 pos){
-                  vec2 baseCell = floor(pos);
-                  vec2 posInCell = baseCell + unity_noise_randomValue(baseCell);
-                  if (distance(pos, posInCell) < 0.1){
-                    return 1.0;
-                  }
-                  return 0.0;
-                }
-            `;
-    }
-
-    //sets each vertex's position to the its position + the red value of our texture
-    vertex_glsl_code() {
-        return this.shared_glsl_code() + `
-                attribute vec3 position;                         
-                uniform mat4 projection_camera_model_transform;
-                uniform mat4 model_transform;
-                
-                void main(){
-                    noisePos = (model_transform * vec4(position, 1.0)).xz;
-                    float alpha = (layer / 100.0) * Unity_SimpleNoise_float(noisePos + vec2(time * 2.0, time * 2.0), 1.0);
-                    noisePos = (model_transform * vec4(position * 30.0, 1.0)).xz;
-                    gl_Position = projection_camera_model_transform * vec4(position.x + (0.1 * alpha), position.y + (0.007 * layer), position.z + (0.1 * alpha), 1.0);
-                }`;
-    }
-
-    //sets each pixel's color
-    fragment_glsl_code() {
-        return this.shared_glsl_code() + `
-                uniform vec4 color;
-                void main(){
-                    gl_FragColor = color;
-                   // float alpha = pow(Unity_SimpleNoise_float(noisePos, 30.0), 2.0 * (layer / 10.0));
-                    float alpha = 20.0 * posInCellNoise(noisePos) / layer;
-                    if (layer == 0.0){
-                      alpha = 1.0;
-                    }
-                    gl_FragColor.w = alpha;
-                }`;
-    }
-}
-
-class Grass_Shader_Perlin extends Shader {
-    constructor(layer) {
-        super();
-        this.layer = layer;
-    }
-
-    update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
-        const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform], PCM = P.times(C).times(M);
-        context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
-        context.uniform4fv(gpu_addresses.color, material.color);
-        context.uniform1f(gpu_addresses.time, graphics_state.animation_time / 1000.0);
-        context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform.transposed()));
-        context.uniform1f(gpu_addresses.layer, this.layer);
-    }
-
-    //glsl code that goes into both the vertex and fragment shaders. the code here gives them both the texture we uploaded to the gpu
-    shared_glsl_code() {
-        return `precision mediump float;
-        
-                varying vec2 noisePos;
-                uniform float time;
-                uniform float layer;
-                
-                float unity_noise_randomValue (vec2 uv){
-                    return fract(sin(dot(uv, vec2(12.9898, 78.233)))*43758.5453);
-                }
-
-                float unity_noise_interpolate (float a, float b, float t){
-                    return (1.0-t)*a + (t*b);
-                }
-
-                float unity_valueNoise (vec2 uv){
-                    vec2 i = floor(uv);
-                    vec2 f = fract(uv);
-                    f = f * f * (3.0 - 2.0 * f);
-
-                    uv = abs(fract(uv) - 0.5);
-                    vec2 c0 = i + vec2(0.0, 0.0);
-                    vec2 c1 = i + vec2(1.0, 0.0);
-                    vec2 c2 = i + vec2(0.0, 1.0);
-                    vec2 c3 = i + vec2(1.0, 1.0);
-                    float r0 = unity_noise_randomValue(c0);
-                    float r1 = unity_noise_randomValue(c1);
-                    float r2 = unity_noise_randomValue(c2);
-                    float r3 = unity_noise_randomValue(c3);
-
-                   float bottomOfGrid = unity_noise_interpolate(r0, r1, f.x);
-                   float topOfGrid = unity_noise_interpolate(r2, r3, f.x);
-                   float t = unity_noise_interpolate(bottomOfGrid, topOfGrid, f.y);
-                   return t;
-                }
-
-                float Unity_SimpleNoise_float(vec2 UV, float Scale){
-                    float t = 0.0;
-
-                    float freq = pow(2.0, float(0));
-                    float amp = pow(0.5, float(3-0));
-                    t += unity_valueNoise(vec2(UV.x*Scale/freq, UV.y*Scale/freq))*amp;
-
-                    freq = pow(2.0, float(1));
-                    amp = pow(0.5, float(3-1));
-                    t += unity_valueNoise(vec2(UV.x*Scale/freq, UV.y*Scale/freq))*amp;
-
-                    freq = pow(2.0, float(2));
-                    amp = pow(0.5, float(3-2));
-                    t += unity_valueNoise(vec2(UV.x*Scale/freq, UV.y*Scale/freq))*amp;
-                    
-                    return t;
-                }
-            `;
-    }
-
-    //sets each vertex's position to the its position + the red value of our texture
-    vertex_glsl_code() {
-        return this.shared_glsl_code() + `
-                attribute vec3 position;                         
-                uniform mat4 projection_camera_model_transform;
-                uniform mat4 model_transform;
-                
-                void main(){
-                    noisePos = (model_transform * vec4(position, 1.0)).xz;
-                    float alpha = (layer / 10.0) * Unity_SimpleNoise_float(noisePos + vec2(time * 2.0, time * 2.0), 1.0);
-                    gl_Position = projection_camera_model_transform * vec4(position.x + (0.2 * alpha), position.y + (0.04 * layer), position.z + (0.2 * alpha), 1.0);
-                }`;
-    }
-
-    //sets each pixel's color
-    fragment_glsl_code() {
-        return this.shared_glsl_code() + `
-                uniform vec4 color;
-                void main(){
-                    gl_FragColor = color;
-                    float alpha = pow(Unity_SimpleNoise_float(noisePos, 30.0), 2.0 * (layer / 10.0));
-                    if (alpha < 0.3){
-                        alpha = 0.0;
-                    }
-                    gl_FragColor.w = alpha;
-                }`;
-    }
-}
-
-class Grass_Shader_Texture_Painting extends Shader {
-    constructor(layer) {
-        super();
-        this.layer = layer;
-    }
-
-    update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
-        const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform], PCM = P.times(C).times(M);
-        context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
-        context.uniform4fv(gpu_addresses.color, material.color);
-        context.uniform1f(gpu_addresses.time, graphics_state.animation_time / 1000.0);
-        context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform.transposed()));
-        context.uniform1f(gpu_addresses.layer, this.layer);
-        context.uniform1i(gpu_addresses.texture, 0);
-        material.texture.activate(context);
-    }
-
-    //glsl code that goes into both the vertex and fragment shaders. the code here gives them both the texture we uploaded to the gpu
-    shared_glsl_code() {
-        return `precision mediump float;
-        
-                varying vec2 noisePos;
-                uniform float time;
-                uniform float layer;
-                
-                uniform sampler2D texture;
-                varying vec2 f_tex_coord;
-                
-                float unity_noise_randomValue (vec2 uv){
-                    return fract(sin(dot(uv, vec2(12.9898, 78.233)))*43758.5453);
-                }
-
-                float unity_noise_interpolate (float a, float b, float t){
-                    return (1.0-t)*a + (t*b);
-                }
-
-                float unity_valueNoise (vec2 uv){
-                    vec2 i = floor(uv);
-                    vec2 f = fract(uv);
-                    f = f * f * (3.0 - 2.0 * f);
-
-                    uv = abs(fract(uv) - 0.5);
-                    vec2 c0 = i + vec2(0.0, 0.0);
-                    vec2 c1 = i + vec2(1.0, 0.0);
-                    vec2 c2 = i + vec2(0.0, 1.0);
-                    vec2 c3 = i + vec2(1.0, 1.0);
-                    float r0 = unity_noise_randomValue(c0);
-                    float r1 = unity_noise_randomValue(c1);
-                    float r2 = unity_noise_randomValue(c2);
-                    float r3 = unity_noise_randomValue(c3);
-
-                   float bottomOfGrid = unity_noise_interpolate(r0, r1, f.x);
-                   float topOfGrid = unity_noise_interpolate(r2, r3, f.x);
-                   float t = unity_noise_interpolate(bottomOfGrid, topOfGrid, f.y);
-                   return t;
-                }
-
-                float Unity_SimpleNoise_float(vec2 UV, float Scale){
-                    float t = 0.0;
-
-                    float freq = pow(2.0, float(0));
-                    float amp = pow(0.5, float(3-0));
-                    t += unity_valueNoise(vec2(UV.x*Scale/freq, UV.y*Scale/freq))*amp;
-
-                    freq = pow(2.0, float(1));
-                    amp = pow(0.5, float(3-1));
-                    t += unity_valueNoise(vec2(UV.x*Scale/freq, UV.y*Scale/freq))*amp;
-
-                    freq = pow(2.0, float(2));
-                    amp = pow(0.5, float(3-2));
-                    t += unity_valueNoise(vec2(UV.x*Scale/freq, UV.y*Scale/freq))*amp;
-
-                    return t;
-                }
-        
-            `;
-    }
-
-    //sets each vertex's position to the its position + the red value of our texture
-    vertex_glsl_code() {
-        return this.shared_glsl_code() + `
-                attribute vec3 position;
-                attribute vec2 texture_coord;                         
-                uniform mat4 projection_camera_model_transform;
-                uniform mat4 model_transform;
-                
-                void main(){
-                    noisePos = (model_transform * vec4(position, 1.0)).xz;
-                    float alpha = (layer / 10.0) * Unity_SimpleNoise_float(noisePos + vec2(time * 2.0, time * 2.0), 1.0);
-                    gl_Position = projection_camera_model_transform * vec4(position.x + (0.2 * alpha), position.y + (0.04 * layer), position.z + (0.2 * alpha), 1.0);
-                    f_tex_coord = texture_coord;
-                }`;
-    }
-
-    //sets each pixel's color
-    fragment_glsl_code() {
-        return this.shared_glsl_code() + `
-                uniform vec4 color;
-                void main(){
-                    gl_FragColor = color;
-                    float alpha = pow(Unity_SimpleNoise_float(noisePos, 30.0), 2.0 * (layer / 10.0));
-                    if (alpha < 0.3){
-                        alpha = 0.0;
-                    }
-                    
-                    vec4 tex_color = texture2D(texture, f_tex_coord);
-                    if (tex_color.r > 0.0){
-                      if (layer == 0.0){
-                        alpha = 1.0;
-                      }
-                      else {
-                        alpha = 0.0;
-                      }
-                    }
-                    gl_FragColor.w = alpha;
-                }`;
-    }
-}
-
-class Grass_Shader_Texture_Painting_Phong extends Shader {
+class Grass_Shader extends Shader {
     constructor(layer, num_lights = 2) {
         super();
         this.layer = layer;
@@ -562,51 +230,47 @@ class Grass_Shader_Texture_Painting_Phong extends Shader {
                 uniform sampler2D texture;
                 varying vec2 f_tex_coord;
                 
-                float unity_noise_randomValue (vec2 uv){
-                    return fract(sin(dot(uv, vec2(12.9898, 78.233)))*43758.5453);
+                float random (vec2 value){
+                    return fract(sin(dot(value, vec2(94.8365, 47.053))) * 94762.9342);
                 }
 
-                float unity_noise_interpolate (float a, float b, float t){
-                    return (1.0-t)*a + (t*b);
+                float lerp(float a, float b, float percent){
+                    return (1.0 - percent) * a + (percent * b);
                 }
 
-                float unity_valueNoise (vec2 uv){
-                    vec2 i = floor(uv);
-                    vec2 f = fract(uv);
-                    f = f * f * (3.0 - 2.0 * f);
+                float perlinNoise (vec2 value){
+                   vec2 integer = floor(value);
+                   vec2 fractional = fract(value);
+                   fractional = fractional * fractional * (3.0 - 2.0 * fractional);
 
-                    uv = abs(fract(uv) - 0.5);
-                    vec2 c0 = i + vec2(0.0, 0.0);
-                    vec2 c1 = i + vec2(1.0, 0.0);
-                    vec2 c2 = i + vec2(0.0, 1.0);
-                    vec2 c3 = i + vec2(1.0, 1.0);
-                    float r0 = unity_noise_randomValue(c0);
-                    float r1 = unity_noise_randomValue(c1);
-                    float r2 = unity_noise_randomValue(c2);
-                    float r3 = unity_noise_randomValue(c3);
+                   value = abs(fract(value) - 0.5);
+                   float currCell = random(integer + vec2(0.0, 0.0));
+                   float rightCell = random(integer + vec2(1.0, 0.0));
+                   float bottomCell = random(integer + vec2(0.0, 1.0));
+                   float bottomRightCell = random(integer + vec2(1.0, 1.0));
 
-                   float bottomOfGrid = unity_noise_interpolate(r0, r1, f.x);
-                   float topOfGrid = unity_noise_interpolate(r2, r3, f.x);
-                   float t = unity_noise_interpolate(bottomOfGrid, topOfGrid, f.y);
-                   return t;
+                   float currRow = lerp(currCell, rightCell, fractional.x);
+                   float lowerRow = lerp(bottomCell, bottomRightCell, fractional.x);
+                   float lerpedRandomVal = lerp(currRow, lowerRow, fractional.y);
+                   return lerpedRandomVal;
                 }
 
-                float Unity_SimpleNoise_float(vec2 UV, float Scale){
-                    float t = 0.0;
+                float PerlinNoise3Pass(vec2 value, float Scale){
+                    float outVal = 0.0;
 
-                    float freq = pow(2.0, float(0));
-                    float amp = pow(0.5, float(3-0));
-                    t += unity_valueNoise(vec2(UV.x*Scale/freq, UV.y*Scale/freq))*amp;
+                    float freq = pow(2.0, 0.0);
+                    float amp = pow(0.5, 3.0);
+                    outVal += perlinNoise(vec2(value.x*Scale/freq, value.y*Scale/freq))*amp;
 
-                    freq = pow(2.0, float(1));
-                    amp = pow(0.5, float(3-1));
-                    t += unity_valueNoise(vec2(UV.x*Scale/freq, UV.y*Scale/freq))*amp;
+                    freq = pow(2.0, 1.0);
+                    amp = pow(0.5, 2.0);
+                    outVal += perlinNoise(vec2(value.x*Scale/freq, value.y*Scale/freq))*amp;
 
-                    freq = pow(2.0, float(2));
-                    amp = pow(0.5, float(3-2));
-                    t += unity_valueNoise(vec2(UV.x*Scale/freq, UV.y*Scale/freq))*amp;
+                    freq = pow(2.0, 2.0);
+                    amp = pow(0.5, 1.0);
+                    outVal += perlinNoise(vec2(value.x*Scale/freq, value.y*Scale/freq))*amp;
 
-                    return t;
+                    return outVal;
                 }
                 
                 const int N_LIGHTS = ` + this.num_lights + `;
@@ -652,34 +316,31 @@ class Grass_Shader_Texture_Painting_Phong extends Shader {
                 
                 void main(){
                     noisePos = (model_transform * vec4(position, 1.0)).xz;
-                    float alpha = (layer / 10.0) * Unity_SimpleNoise_float(noisePos + vec2(time * 2.0, time * 2.0), 1.0);
+                    float alpha = (layer / 10.0) * PerlinNoise3Pass(noisePos + vec2(time * 2.0, time * 2.0), 2.0);
                     gl_Position = projection_camera_model_transform * vec4(position.x + (0.2 * alpha), position.y + (0.04 * layer), position.z + (0.2 * alpha), 1.0);
                     f_tex_coord = texture_coord;
                     N = normalize( mat3( model_transform ) * normal / squared_scale);
                     vertex_worldspace = (model_transform * vec4( position, 1.0 )).xyz;
+                    //noisePos.x -= 0.5 * time;
                 }`;
     }
 
     fragment_glsl_code() {
         return this.shared_glsl_code() + `
                 void main(){
-                    gl_FragColor = vec4(color.x * ambient, color.y * ambient, color.z * ambient, 1.0);
+                    gl_FragColor = vec4(color.x * ambient + (layer / 70.0), color.y * ambient + (layer / 70.0), color.z * ambient + (layer / 70.0), 1.0);
                     gl_FragColor.xyz += phong_model_lights( normalize( N ), vertex_worldspace);
-                    float alpha = pow(Unity_SimpleNoise_float(noisePos, 30.0), 2.0 * (layer / 10.0));
-                    if (alpha < 0.3){
-                        alpha = 0.0;
-                    }
                     
+                    float perlin = 1.0 - (1.0 - PerlinNoise3Pass(noisePos, 50.0)) * 2.2;
+                    float white = 1.0 - (1.0 - perlinNoise(noisePos)) * 40.0;
+                    float alpha = perlin * white - ((layer + 0.2) * 1.2 / 1.0);
+                    if (alpha < 0.0){
+                      discard;
+                    }
                     vec4 tex_color = texture2D(texture, f_tex_coord);
                     if (tex_color.r > 0.0){
-                      if (layer == 0.0){
-                        alpha = 1.0;
-                      }
-                      else {
-                        alpha = 0.0;
-                      }
+                        discard;
                     }
-                    gl_FragColor.w = alpha;
                 }`;
     }
 }
@@ -1199,45 +860,34 @@ class Base_Scene extends Scene {
                 {ambient: .4, diffusivity: .6, color: hex_color("#ffffff")}),
             texturedPhong: new Material(new defs.Textured_Phong(),
                 {ambient: 0.4, diffusivity: 0.6, specularity: 0.5, color: hex_color("#494949"), texture: new Texture("assets/rgb.jpg")}),
-            bump: new Material(new defs.Textured_Phong(),
-                {ambient: .4, diffusivity: .6, color: hex_color("#ffffff"), texture: new Texture("assets/rgb.jpg")}),
-            //creates a material based on our texture. For now it also takes a color variable, but I think we can get rid of that at some point
+            ground: new Material(new defs.Phong_Shader(), {ambient: .4, diffusivity: .6, specularity: 0.02, color: hex_color("#29601c")}),
             offset: new Material(new Offset_shader(), {color: hex_color("#2b3b86"), texture: this.texture}),
             phong_water: new Material(new Phong_Water_Shader(), {color: hex_color("#4e6ef6"), ambient: 0.2, diffusivity: 0.7, specularity: 0.03, smoothness: 100}),
-            funny: new Material(new defs.Funny_Shader()),
             water: new Material(new Water_Shader(), {color: hex_color("#4e6ef6")}),
         };
 
         this.white = new Material(new defs.Basic_Shader());
 
-        this.grassMatsSparse = [];
-        for (let i = 0; i < 50; i++){
-            this.grassMatsSparse.push(new Material(new Grass_Shader_Sparse(i), {color: hex_color("#246412")}));
-        }
-
-        this.grassMatsPerlin = [];
+        this.grassMats = [];
         for (let i = 0; i < 16; i++){
-            this.grassMatsPerlin.push(new Material(new Grass_Shader_Texture_Painting_Phong(i), {color: hex_color("#20620e"), texture: this.texture, ambient: 0.3, diffusivity: 0.6, specularity: 0.03, smoothness: 100}));
+            this.grassMats.push(new Material(new Grass_Shader(i), {color: hex_color("#38af18"), texture: this.texture, ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100}));
         }
-
-        this.grassType = false;
 
         this.water_plane = new Scene_Object(new Triangle_Strip_Plane(17,17, Vector3.create(0,0,0), this.planeDensity), Mat4.translation(0,-0.7,0), this.materials.phong_water, "TRIANGLE_STRIP");
         this.plane = new Scene_Object(new Triangle_Strip_Plane(this.planeLength,this.planeWidth, Vector3.create(0,0,0), this.planeDensity), Mat4.translation(0,0,0), this.materials.plastic, "TRIANGLE_STRIP");
-        this.grass_plane = new Scene_Object(new Triangle_Strip_Plane(this.planeLength,this.planeWidth, Vector3.create(0,0,0), 1), Mat4.translation(0,0,0), this.materials.plastic, "TRIANGLE_STRIP");
-        this.ground_plane = new Scene_Object(new Triangle_Strip_Plane(this.planeLength,this.planeWidth, Vector3.create(0,0,0), this.planeDensity), Mat4.translation(0,0,0), this.materials.plastic, "TRIANGLE_STRIP");
+        this.grass_plane = new Scene_Object(new Triangle_Strip_Plane(this.planeLength, this.planeWidth, Vector3.create(0,0,0), 4), Mat4.translation(0,0,0), this.materials.plastic, "TRIANGLE_STRIP");
+        this.ground_plane = new Scene_Object(new Triangle_Strip_Plane(this.planeLength, this.planeWidth, Vector3.create(0,0,0), this.planeDensity), Mat4.translation(0,0,0), this.materials.ground, "TRIANGLE_STRIP");
     }
 
     display(context, program_state) {
         if (!context.scratchpad.controls) {
             this.children.push(context.scratchpad.controls = new Custom_Movement_Controls());
-            //sets the camera at location (6,7,25), looking at the origin
             program_state.set_camera(Mat4.look_at(vec3(6, 7, 25), vec3(0, 0, 0), vec3(0, 1, 0)))
         }
         program_state.projection_transform = Mat4.perspective(
             Math.PI/4 , context.width / context.height, 1, 100);
 
-        program_state.lights = [new Light(vec4(7, 2, 7, 0), color(1.1, 1.1, 1.1, 1), 10000), new Light(vec4(-7, 2, -7, 0), color(1, 1, 1, 1), 10000)];
+        program_state.lights = [new Light(vec4(7, 2, 7, 0), color(1.1, 1.1, 1.1, 1), 10000), new Light(vec4(-7, 2, -7, 0), color(1, 1, 1, 1), 1000)];
     }
 }
 
@@ -1248,7 +898,6 @@ export class Test extends Base_Scene {
 
     make_control_panel(context) {
         this.key_triggered_button("change water shader", ["p"], () => this.water_plane.material = (this.water_plane.material === this.materials.water) ? this.materials.phong_water:this.materials.water);
-        this.key_triggered_button("change grass shader", ["n"], () => this.grassType = !this.grassType);
     }
 
     //helper function to get the location of the closest vertex on our plane to where the mouse is pointing
@@ -1281,7 +930,7 @@ export class Test extends Base_Scene {
     //eventually I intend for this to create a circle of that radius, but for now its just a square of size 10
     drawnOnTexture(location, brushRadius) {
         //this find what percentage to the edge the location given is. I currently treat the texture as taking up the same world space size as the size of the plane
-        let textureLocPercent = Vector.create((location[0]-1) / (this.planeWidth / 2), (location[2]-1) / (this.planeLength / 2));
+        let textureLocPercent = Vector.create((location[0]-1) / (this.planeWidth / 2), -(location[2]-1) / (this.planeLength / 2));
         //using the percentage we can find what z and x coordinates that would be given 128 rows to the right and down from the origin
         let textureLoc = Vector.create(Math.ceil(textureLocPercent[0] * 128) + 128, Math.ceil(textureLocPercent[1] * 128) + 128);
 
@@ -1332,7 +981,6 @@ export class Test extends Base_Scene {
             let dest = this.getClosestLocOnPlane(context, program_state);
             //paint on the texture with a brush radius of 10 (the brush radius doesn't actually do anything yet)
             this.drawnOnTexture(dest, 15);
-            this.texture.copy_onto_graphics_card(context.context, false);
             this.drawnOnPlane(dest, 20);
             this.plane.shape.copy_onto_graphics_card(context.context);
         }
@@ -1342,21 +990,22 @@ export class Test extends Base_Scene {
         this.shapes.axis.draw(context, program_state, model_transform, this.materials.plastic);
 
         //this.plane.drawObject(context, program_state);
-        //this.ground_plane.drawObject(context, program_state);
+        this.ground_plane.drawObject(context, program_state);
         this.water_plane.drawObject(context, program_state);
 
-        if (this.grassType) {
-            for (let i = 0; i < this.grassMatsSparse.length; i++) {
-                this.grass_plane.material = this.grassMatsSparse[i];
-                this.grass_plane.drawObject(context, program_state);
+        for (let i = 0; i < this.offsets.length / 4; i++){
+            if (this.offsets[i * 4] > 0){
+                this.offsets[i * 4] -= 15;
             }
         }
-        else {
-            for (let i = 0; i < this.grassMatsPerlin.length; i++) {
-                this.plane.material = this.grassMatsPerlin[i];
-                this.plane.drawObject(context, program_state);
-            }
+        this.texture.copy_onto_graphics_card(context.context, false);
+
+
+        for (let i = 0; i < this.grassMats.length; i++) {
+            this.grass_plane.material = this.grassMats[i];
+            this.grass_plane.drawObject(context, program_state);
         }
+
 
         this.water_plane.drawObject(context, program_state);
 
