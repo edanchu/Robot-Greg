@@ -178,6 +178,41 @@ class Offset_shader extends Shader {
     }
 }
 
+    class Skybox_Shader extends Shader {
+
+        update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
+            const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform],
+                PCM = P.times(C).times(M);
+            context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false,
+                Matrix.flatten_2D_to_1D(PCM.transposed()));
+        }
+
+        shared_glsl_code() {
+            return `precision mediump float;
+                
+            `;
+        }
+
+        vertex_glsl_code() {
+            return this.shared_glsl_code() + `
+                attribute vec3 position;                            
+                uniform mat4 projection_camera_model_transform;
+        
+                void main(){
+                    gl_Position = projection_camera_model_transform * vec4( position, 1.0 );
+                }`;
+        }
+
+        fragment_glsl_code() {
+            return this.shared_glsl_code() + `
+                uniform vec4 color;
+                
+                void main(){
+                    gl_FragColor = color;
+                }`;
+        }
+    }
+
 class Grass_Shader extends Shader {
     constructor(layer, num_lights = 2) {
         super();
@@ -258,17 +293,17 @@ class Grass_Shader extends Shader {
                 float PerlinNoise3Pass(vec2 value, float Scale){
                     float outVal = 0.0;
 
-                    float freq = pow(2.0, 0.0);
-                    float amp = pow(0.5, 3.0);
-                    outVal += perlinNoise(vec2(value.x*Scale/freq, value.y*Scale/freq))*amp;
+                    float frequency = pow(2.0, 0.0);
+                    float amplitude = pow(0.5, 3.0);
+                    outVal += perlinNoise(vec2(value.x * Scale / frequency, value.y * Scale / frequency)) * amplitude;
 
-                    freq = pow(2.0, 1.0);
-                    amp = pow(0.5, 2.0);
-                    outVal += perlinNoise(vec2(value.x*Scale/freq, value.y*Scale/freq))*amp;
+                    frequency = pow(2.0, 1.0);
+                    amplitude = pow(0.5, 2.0);
+                    outVal += perlinNoise(vec2(value.x * Scale / frequency, value.y * Scale / frequency)) * amplitude;
 
-                    freq = pow(2.0, 2.0);
-                    amp = pow(0.5, 1.0);
-                    outVal += perlinNoise(vec2(value.x*Scale/freq, value.y*Scale/freq))*amp;
+                    frequency = pow(2.0, 2.0);
+                    amplitude = pow(0.5, 1.0);
+                    outVal += perlinNoise(vec2(value.x * Scale / frequency, value.y * Scale / frequency)) * amplitude;
 
                     return outVal;
                 }
@@ -864,6 +899,7 @@ class Base_Scene extends Scene {
             offset: new Material(new Offset_shader(), {color: hex_color("#2b3b86"), texture: this.texture}),
             phong_water: new Material(new Phong_Water_Shader(), {color: hex_color("#4e6ef6"), ambient: 0.2, diffusivity: 0.7, specularity: 0.03, smoothness: 100}),
             water: new Material(new Water_Shader(), {color: hex_color("#4e6ef6")}),
+            skybox: new Material(new Skybox_Shader()),
         };
 
         this.white = new Material(new defs.Basic_Shader());
