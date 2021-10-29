@@ -514,10 +514,10 @@ class Phong_Water_Shader extends Shader{
         return this.shared_glsl_code() + `
                 
                 void main(){
-                    gl_FragColor = vec4(shape_color.x * ambient, shape_color.y * ambient, shape_color.z * ambient, 0.8);
+                    gl_FragColor = vec4(shape_color.x * ambient, shape_color.y * ambient, shape_color.z * ambient, 0.1);
                     vec3 lighting = phong_model_lights( normalize( N ), vertex_worldspace);
-                    float noise = pow(voronoi(noisePos), 4.0);
-                    gl_FragColor.xyz += lighting + noise * lighting * 3.0 + noise * (ambient / 3.0);
+                    float noise = min(pow(voronoi(noisePos), 4.0), pow(voronoi(noisePos), 6.0));
+                    gl_FragColor.xyz += lighting + noise * lighting * 2.0 + noise * (ambient / 3.0);
                 }`;
     }
 }
@@ -898,7 +898,6 @@ class Base_Scene extends Scene {
             plastic: new Material(new defs.Phong_Shader(), {ambient: .4, diffusivity: .6, color: hex_color("#ffffff")}),
             ground: new Material(new defs.Phong_Shader(), {ambient: .4, diffusivity: .6, specularity: 0.02, color: hex_color("#29601c")}),
             offset: new Material(new Offset_shader(), {color: hex_color("#2b3b86"), texture: this.grassOcclusionTexture}),
-            phong_water: new Material(new Phong_Water_Shader(), {color: hex_color("#4e6ef6"), ambient: 0.2, diffusivity: 0.7, specularity: 0.03, smoothness: 100}),
             water: new Material(new Water_Shader(), {color: hex_color("#4e6ef6")}),
             skybox: new Material(new Skybox_Shader()),
             white: new Material(new defs.Basic_Shader()),
@@ -910,7 +909,7 @@ class Base_Scene extends Scene {
         this.isOccluding = false;
 
         //this.plane =  new Scene_Object(new Triangle_Strip_Plane(20,20, Vector3.create(0,0,0), 5), Mat4.translation(0,2,0), this.materials.offset, "TRIANGLE_STRIP");
-        this.water_plane = new Scene_Object(new Triangle_Strip_Plane(18,18, Vector3.create(0,0,0), 5), Mat4.translation(0,-0.7,0), this.materials.phong_water, "TRIANGLE_STRIP");
+        this.water_plane = new Scene_Object(new Triangle_Strip_Plane(18,18, Vector3.create(0,0,0), 5), Mat4.translation(0,-0.7,0), new Material(new Phong_Water_Shader(), {color: hex_color("#4e6ef6"), ambient: 0.2, diffusivity: 0.7, specularity: 0.7, smoothness: 100}), "TRIANGLE_STRIP");
         this.grass_plane = new Scene_Object(new Triangle_Strip_Plane(20, 20, Vector3.create(0,0,0), 7), Mat4.translation(0,0,0), new Material(new Grass_Shader(0), {color: hex_color("#38af18"), texture: this.grassOcclusionTexture, ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100}), "TRIANGLE_STRIP");
     }
 
@@ -1066,12 +1065,8 @@ export class Test extends Base_Scene {
         }
         this.grassOcclusionTexture.copy_onto_graphics_card(context.context, false);
 
-        //draw the plane and axis (axis was just so I could see if it is actually centered, I should honestly just remove it)
-        let model_transform = Mat4.identity();
-        this.shapes.axis.draw(context, program_state, model_transform, this.materials.plastic);
 
-        //this.plane.drawObject(context, program_state);
-        //this.ground_plane.drawObject(context, program_state);
+        this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plastic);
 
         for (let i = 0; i < 16; i++) {
             this.grass_plane.material.shader.layer = i;
