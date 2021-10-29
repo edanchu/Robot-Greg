@@ -121,10 +121,29 @@ class Triangle_Strip_Plane extends Shape{
         }
     }
 
-    addVertexHeight(x, z, newHeight){
+    addVertexHeight(x, z, newHeight, max = 20){
         if ((x + (z * this.width * this.density)) < this.arrays.position.length && (x + (z * this.width * this.density)) >= 0) {
-            this.arrays.position[x + (z * this.width * this.density)][1] -= newHeight;
-            this.arrays.normal[x + (z * this.width * this.density)][1] -= newHeight;
+            if (this.arrays.position[x + (z * this.width * this.density)][1] + newHeight <= max) {
+                this.arrays.position[x + (z * this.width * this.density)][1] += newHeight;
+                this.arrays.normal[x + (z * this.width * this.density)][1] += newHeight;
+            }
+            else {
+                this.arrays.position[x + (z * this.width * this.density)][1] = max;
+                this.arrays.normal[x + (z * this.width * this.density)][1] = max;
+            }
+        }
+    }
+
+    removeVertexHeight(x, z, newHeight, min = -10){
+        if ((x + (z * this.width * this.density)) < this.arrays.position.length && (x + (z * this.width * this.density)) >= 0) {
+            if (this.arrays.position[x + (z * this.width * this.density)][1] - newHeight >= min) {
+                this.arrays.position[x + (z * this.width * this.density)][1] -= newHeight;
+                this.arrays.normal[x + (z * this.width * this.density)][1] -= newHeight;
+            }
+            else {
+                this.arrays.position[x + (z * this.width * this.density)][1] = min;
+                this.arrays.normal[x + (z * this.width * this.density)][1] = min;
+            }
         }
     }
 }
@@ -178,40 +197,39 @@ class Offset_shader extends Shader {
     }
 }
 
-    class Skybox_Shader extends Shader {
+class Skybox_Shader extends Shader {
 
-        update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
-            const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform],
-                PCM = P.times(C).times(M);
-            context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false,
-                Matrix.flatten_2D_to_1D(PCM.transposed()));
-        }
+    update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
+        const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform],
+            PCM = P.times(C).times(M);
+        context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false,
+            Matrix.flatten_2D_to_1D(PCM.transposed()));
+    }
+    shared_glsl_code() {
+        return `precision mediump float;
+               
+           `;
+    }
 
-        shared_glsl_code() {
-            return `precision mediump float;
-                
-            `;
-        }
-
-        vertex_glsl_code() {
-            return this.shared_glsl_code() + `
-                attribute vec3 position;                            
-                uniform mat4 projection_camera_model_transform;
+    vertex_glsl_code() {
+        return this.shared_glsl_code() + `
+               attribute vec3 position;                            
+               uniform mat4 projection_camera_model_transform;
         
                 void main(){
                     gl_Position = projection_camera_model_transform * vec4( position, 1.0 );
                 }`;
-        }
+    }
 
-        fragment_glsl_code() {
-            return this.shared_glsl_code() + `
-                uniform vec4 color;
+    fragment_glsl_code() {
+        return this.shared_glsl_code() + `
+               uniform vec4 color;
                 
                 void main(){
                     gl_FragColor = color;
                 }`;
-        }
     }
+}
 
 class Grass_Shader extends Shader {
     constructor(layer, num_lights = 2) {
@@ -258,7 +276,7 @@ class Grass_Shader extends Shader {
     shared_glsl_code() {
         return `precision mediump float;
         
-                varying vec2 noisePos;
+                varying vec4 worldPos;
                 uniform float time;
                 uniform float layer;
                 
@@ -350,13 +368,12 @@ class Grass_Shader extends Shader {
                 uniform mat4 model_transform;
                 
                 void main(){
-                    noisePos = (model_transform * vec4(position, 1.0)).xz;
-                    float alpha = (layer / 10.0) * PerlinNoise3Pass(noisePos + vec2(time * 2.0, time * 2.0), 2.0);
+                    worldPos = model_transform * vec4(position, 1.0);
+                    float alpha = (layer / 10.0) * PerlinNoise3Pass(worldPos.xz + vec2(time * 2.0, time * 2.0), 2.0);
                     gl_Position = projection_camera_model_transform * vec4(position.x + (0.2 * alpha), position.y + (0.04 * layer), position.z + (0.2 * alpha), 1.0);
                     f_tex_coord = texture_coord;
                     N = normalize( mat3( model_transform ) * normal / squared_scale);
                     vertex_worldspace = (model_transform * vec4( position, 1.0 )).xyz;
-                    //noisePos.x -= 0.5 * time;
                 }`;
     }
 
@@ -366,15 +383,17 @@ class Grass_Shader extends Shader {
                     gl_FragColor = vec4(color.x * ambient + (layer / 70.0), color.y * ambient + (layer / 70.0), color.z * ambient + (layer / 70.0), 1.0);
                     gl_FragColor.xyz += phong_model_lights( normalize( N ), vertex_worldspace);
                     
-                    float perlin = 1.0 - (1.0 - PerlinNoise3Pass(noisePos, 50.0)) * 2.2;
-                    float white = 1.0 - (1.0 - perlinNoise(noisePos)) * 40.0;
-                    float alpha = perlin * white - ((layer + 0.2) * 1.2 / 1.0);
-                    if (alpha < 0.0){
-                      discard;
-                    }
-                    vec4 tex_color = texture2D(texture, f_tex_coord);
-                    if (tex_color.r > 0.0){
-                        discard;
+                    if (layer > 0.0){
+                        float perlin = 1.0 - (1.0 - PerlinNoise3Pass(worldPos.xz, 50.0)) * 2.2;
+                        float white = 1.0 - (1.0 - perlinNoise(worldPos.xz)) * 40.0;
+                        float alpha = perlin * white - ((layer + 0.2) * 1.2 / 1.0);
+                        if (alpha < 0.0 || worldPos.y < -0.7){
+                            discard;
+                        }
+                        vec4 tex_color = texture2D(texture, f_tex_coord);
+                        if (tex_color.r > 0.0){
+                            discard;
+                        }
                     }
                 }`;
     }
@@ -482,9 +501,9 @@ class Phong_Water_Shader extends Shader{
                 uniform mat4 model_transform;
                 
                 void main(){
-                    noisePos = (model_transform * vec4(position.x, position.y, position.z, 1.0)).xz * (1.3 / 1.0);
+                    noisePos = (model_transform * vec4(position.x, position.y, position.z, 1.0)).xz * (1.0 / 1.3);
                     float noise = voronoi(noisePos);
-                    gl_Position = projection_camera_model_transform * vec4( position.x, position.y + (noise / 10.0), position.z, 1.0 );
+                    gl_Position = projection_camera_model_transform * vec4( position.x, position.y + (noise / 4.0), position.z, 1.0 );
                     N = normalize( mat3( model_transform ) * vec3(normal.x, normal.y + (noise / 10.0), normal.z) / squared_scale);
                     vertex_worldspace = (model_transform * vec4( position, 1.0 )).xyz;
                 }`;
@@ -688,11 +707,17 @@ class Water_Shader extends Shader{
 //custom texture class that uses a software defined array as input instead of the html IMAGE object that the default class uses
 //need to pass in the length and width of the data as well as the data itself
 //most of this is documented in the tiny-graphics.js file, so I will just comment the changes I made from that
-class Custom_Texture extends Graphics_Card_Object {
+class Dynamic_Texture extends Graphics_Card_Object {
     //im not sure why this assigns object properties this way, but I just kept what they did in tiny.js and added the length, width, etc designations
-    constructor(length, width, data, min_filter = "LINEAR_MIPMAP_LINEAR") {
+    constructor(length, width, min_filter = "LINEAR_MIPMAP_LINEAR") {
         super();
-        Object.assign(this, {length, width, data, min_filter});
+        this.length = length;
+        this.width = width;
+        this.min_filter = min_filter;
+        this.data = [];
+        for(let i = 0; i < this.length * this.width; i++){
+            this.data.push(0,0,0,255);
+        }
         //normally there would be declarations of an html IMAGE object here. We don't want to use a source file and want to
         //pass in our own data, so I removed that
     }
@@ -862,63 +887,37 @@ class Base_Scene extends Scene {
     constructor() {
         super();
 
-        //define how long and wide we want our plane to be. the density gives extra resolution by making more triangles in the same amount of space
-        this.planeWidth = 20;
-        this.planeLength = 20;
-        this.planeDensity = 7;
-
-        //declare a 256 by 256 array that will be used as our texture to store height data. for now it also has values in the other color channels
-        //since it is being used to color the plane as well, but that will change. Each color is from 0 to 255
-        // (this isn't actually constrained since js has no types and I don't know how to constrain that from here)
-        this.offsetsWidth = 256;
-        this.offsetsLength = 256;
-        this.offsets = [];
-        for (let i = 0; i < this.offsetsWidth * this.offsetsLength; i++){
-            this.offsets.push(0, 0, 255, 255);
-        }
-
         //creates our custom texture based on the heightmap data we just created
-        this.texture = new Custom_Texture(this.offsetsLength, this.offsetsWidth, this.offsets);
+        this.grassOcclusionTexture = new Dynamic_Texture(256, 256);
 
         this.shapes = {
-            'square' : new defs.Square(),
-            'cube': new Cube(),
-            'outline': new Cube_Outline(),
-            'single_strip' : new Cube_Single_Strip(),
-            //creates our custom plane with the previously declared length, width, density, and an origin of (0,0,0)
-            'plane' : new Triangle_Strip_Plane(this.planeLength,this.planeWidth, Vector3.create(0,0,0), this.planeDensity),
             'axis' : new defs.Axis_Arrows()
         };
 
         this.materials = {
-            plastic: new Material(new defs.Phong_Shader(),
-                {ambient: .4, diffusivity: .6, color: hex_color("#ffffff")}),
-            texturedPhong: new Material(new defs.Textured_Phong(),
-                {ambient: 0.4, diffusivity: 0.6, specularity: 0.5, color: hex_color("#494949"), texture: new Texture("assets/rgb.jpg")}),
+            plastic: new Material(new defs.Phong_Shader(), {ambient: .4, diffusivity: .6, color: hex_color("#ffffff")}),
             ground: new Material(new defs.Phong_Shader(), {ambient: .4, diffusivity: .6, specularity: 0.02, color: hex_color("#29601c")}),
-            offset: new Material(new Offset_shader(), {color: hex_color("#2b3b86"), texture: this.texture}),
+            offset: new Material(new Offset_shader(), {color: hex_color("#2b3b86"), texture: this.grassOcclusionTexture}),
             phong_water: new Material(new Phong_Water_Shader(), {color: hex_color("#4e6ef6"), ambient: 0.2, diffusivity: 0.7, specularity: 0.03, smoothness: 100}),
             water: new Material(new Water_Shader(), {color: hex_color("#4e6ef6")}),
             skybox: new Material(new Skybox_Shader()),
+            white: new Material(new defs.Basic_Shader()),
         };
 
-        this.white = new Material(new defs.Basic_Shader());
 
-        this.grassMats = [];
-        for (let i = 0; i < 16; i++){
-            this.grassMats.push(new Material(new Grass_Shader(i), {color: hex_color("#38af18"), texture: this.texture, ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100}));
-        }
+        this.isRaising = true;
+        this.isLowering = false;
+        this.isOccluding = false;
 
-        this.water_plane = new Scene_Object(new Triangle_Strip_Plane(17,17, Vector3.create(0,0,0), this.planeDensity), Mat4.translation(0,-0.7,0), this.materials.phong_water, "TRIANGLE_STRIP");
-        this.plane = new Scene_Object(new Triangle_Strip_Plane(this.planeLength,this.planeWidth, Vector3.create(0,0,0), this.planeDensity), Mat4.translation(0,0,0), this.materials.plastic, "TRIANGLE_STRIP");
-        this.grass_plane = new Scene_Object(new Triangle_Strip_Plane(this.planeLength, this.planeWidth, Vector3.create(0,0,0), 4), Mat4.translation(0,0,0), this.materials.plastic, "TRIANGLE_STRIP");
-        this.ground_plane = new Scene_Object(new Triangle_Strip_Plane(this.planeLength, this.planeWidth, Vector3.create(0,0,0), this.planeDensity), Mat4.translation(0,0,0), this.materials.ground, "TRIANGLE_STRIP");
+        //this.plane =  new Scene_Object(new Triangle_Strip_Plane(20,20, Vector3.create(0,0,0), 5), Mat4.translation(0,2,0), this.materials.offset, "TRIANGLE_STRIP");
+        this.water_plane = new Scene_Object(new Triangle_Strip_Plane(18,18, Vector3.create(0,0,0), 5), Mat4.translation(0,-0.7,0), this.materials.phong_water, "TRIANGLE_STRIP");
+        this.grass_plane = new Scene_Object(new Triangle_Strip_Plane(20, 20, Vector3.create(0,0,0), 7), Mat4.translation(0,0,0), new Material(new Grass_Shader(0), {color: hex_color("#38af18"), texture: this.grassOcclusionTexture, ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100}), "TRIANGLE_STRIP");
     }
 
     display(context, program_state) {
         if (!context.scratchpad.controls) {
             this.children.push(context.scratchpad.controls = new Custom_Movement_Controls());
-            program_state.set_camera(Mat4.look_at(vec3(6, 7, 25), vec3(0, 0, 0), vec3(0, 1, 0)))
+            program_state.set_camera(Mat4.look_at(vec3(7, 12, 23), vec3(1, 0, 0), vec3(0, 1, 0)))
         }
         program_state.projection_transform = Mat4.perspective(
             Math.PI/4 , context.width / context.height, 1, 100);
@@ -933,11 +932,25 @@ export class Test extends Base_Scene {
     }
 
     make_control_panel(context) {
-        this.key_triggered_button("change water shader", ["p"], () => this.water_plane.material = (this.water_plane.material === this.materials.water) ? this.materials.phong_water:this.materials.water);
+        this.key_triggered_button("raise terrain", ["r"], () => {
+            this.isRaising = true;
+            this.isLowering = false;
+            this.isOccluding = false;
+        });
+        this.key_triggered_button("lower terrain", ["l"], () => {
+            this.isRaising = false;
+            this.isLowering = true;
+            this.isOccluding = false;
+        });
+        this.key_triggered_button("occlude grass", ["o"], () => {
+            this.isRaising = false;
+            this.isLowering = false;
+            this.isOccluding = true;
+        });
     }
 
     //helper function to get the location of the closest vertex on our plane to where the mouse is pointing
-    getClosestLocOnPlane(context, program_state) {
+    getClosestLocOnPlane(plane, context, program_state) {
         //get the size of our canvas so we can know how far the mouse is from the center by normalizing as a percent from -1-1
         let rect = context.canvas.getBoundingClientRect();
         let mousePosPercent = Vector.create(2 * context.scratchpad.controls.mouse.from_center[0] / (rect.right - rect.left),
@@ -959,16 +972,13 @@ export class Test extends Base_Scene {
 
         //this calls the intersection function of the plane shape to find which vertex is nearest to the mouse click. the function takes
         //our mouse's location as the origin, and a vector direction to the world space location of the far coordinate
-        return this.plane.shape.closestVertexToRay(worldSpaceNear, worldSpaceFar.minus(worldSpaceNear).normalized());
+        return plane.shape.closestVertexToRay(worldSpaceNear, worldSpaceFar.minus(worldSpaceNear).normalized());
     }
 
-    //this function draws onto the heightmap texture when given a location to draw (in world space coordinates) and a brush radius.
-    //eventually I intend for this to create a circle of that radius, but for now its just a square of size 10
-    drawnOnTexture(location, brushRadius) {
-        //this find what percentage to the edge the location given is. I currently treat the texture as taking up the same world space size as the size of the plane
-        let textureLocPercent = Vector.create((location[0]-1) / (this.planeWidth / 2), -(location[2]-1) / (this.planeLength / 2));
-        //using the percentage we can find what z and x coordinates that would be given 128 rows to the right and down from the origin
-        let textureLoc = Vector.create(Math.ceil(textureLocPercent[0] * 128) + 128, Math.ceil(textureLocPercent[1] * 128) + 128);
+
+    drawnOnTexture(texture, length, width, location, brushRadius) {
+        let textureLocPercent = Vector.create((location[0]-1) / (width / 2), -(location[2]-1) / (length / 2));
+        let textureLoc = Vector.create(Math.ceil(textureLocPercent[0] * (texture.width / 2)) + (texture.width / 2), Math.ceil(textureLocPercent[1] * (texture.length / 2)) + (texture.length / 2));
 
         let strength = 20;
         for (let i = 0; i < brushRadius; i++) {
@@ -976,21 +986,20 @@ export class Test extends Base_Scene {
                 let dx = 0;
                 let sq = (i * i) - (dy * dy);
                 while ((dx * dx) < sq) {
-                    this.offsets[((dx + textureLoc[0]) * 4) + ((dy + textureLoc[1]) * 4 * 256)] += strength;
-                    this.offsets[((dx + textureLoc[0]) * 4) + ((-dy + textureLoc[1] - 1) * 4 * 256)] += strength;
-                    this.offsets[((-dx + textureLoc[0] - 1) * 4) + ((dy + textureLoc[1]) * 4 * 256)] += strength;
-                    this.offsets[((-dx + textureLoc[0] - 1) * 4) + ((-dy + textureLoc[1] - 1) * 4 * 256)] += strength;
+                    texture.data[((dx + textureLoc[0]) * 4) + ((dy + textureLoc[1]) * 4 * texture.width)] += strength;
+                    texture.data[((dx + textureLoc[0]) * 4) + ((-dy + textureLoc[1] - 1) * 4 * texture.width)] += strength;
+                    texture.data[((-dx + textureLoc[0] - 1) * 4) + ((dy + textureLoc[1]) * 4 * texture.width)] += strength;
+                    texture.data[((-dx + textureLoc[0] - 1) * 4) + ((-dy + textureLoc[1] - 1) * 4 * texture.width)] += strength;
                     dx++;
                 }
             }
         }
     }
 
-    drawnOnPlane(location, brushRadius) {
-        //this find what percentage to the edge the location given is. I currently treat the texture as taking up the same world space size as the size of the plane
-        let planeLocPercent = Vector.create((location[0]-1) / (this.planeWidth / 2), (location[2]-1) / (this.planeLength / 2));
-        //using the percentage we can find what z and x coordinates that would be given 128 rows to the right and down from the origin
-        let planeLoc = Vector.create(Math.ceil(planeLocPercent[0] * (this.planeWidth * this.planeDensity / 2)) + (this.planeWidth * this.planeDensity / 2), Math.ceil(planeLocPercent[1] * (this.planeWidth * this.planeDensity / 2)) + (this.planeWidth * this.planeDensity / 2));
+    lowerPlane(plane, location, brushRadius) {
+        let planeLocPercent = Vector.create((location[0]-1) / (plane.shape.length / 2), (location[2]-1) / (plane.shape.width / 2));
+        let planeLoc = Vector.create(Math.ceil(planeLocPercent[0] * (plane.shape.length * plane.shape.density / 2)) + (plane.shape.length * plane.shape.density / 2),
+            Math.ceil(planeLocPercent[1] * (plane.shape.width * plane.shape.density / 2)) + (plane.shape.width * plane.shape.density / 2));
 
         let strength = 0.05 / Math.max((brushRadius - 6), 1);
         for (let i = 0; i < brushRadius; i++) {
@@ -998,10 +1007,31 @@ export class Test extends Base_Scene {
                 let dx = 0;
                 let sq = (i * i) - (dy * dy);
                 while ((dx * dx) < sq) {
-                    this.plane.shape.addVertexHeight(dx + planeLoc[0], dy + planeLoc[1], strength);
-                    this.plane.shape.addVertexHeight(dx + planeLoc[0], -dy + planeLoc[1] - 1, strength);
-                    this.plane.shape.addVertexHeight(-dx + planeLoc[0] - 1, dy + planeLoc[1], strength);
-                    this.plane.shape.addVertexHeight(-dx + planeLoc[0] - 1, -dy + planeLoc[1] - 1, strength);
+                    plane.shape.removeVertexHeight(dx + planeLoc[0], dy + planeLoc[1], strength);
+                    plane.shape.removeVertexHeight(dx + planeLoc[0], -dy + planeLoc[1] - 1, strength);
+                    plane.shape.removeVertexHeight(-dx + planeLoc[0] - 1, dy + planeLoc[1], strength);
+                    plane.shape.removeVertexHeight(-dx + planeLoc[0] - 1, -dy + planeLoc[1] - 1, strength);
+                    dx++;
+                }
+            }
+        }
+    }
+
+    raisePlane(plane, location, brushRadius) {
+        let planeLocPercent = Vector.create((location[0]-1) / (plane.shape.length / 2), (location[2]-1) / (plane.shape.width / 2));
+        let planeLoc = Vector.create(Math.ceil(planeLocPercent[0] * (plane.shape.length * plane.shape.density / 2)) + (plane.shape.length * plane.shape.density / 2),
+            Math.ceil(planeLocPercent[1] * (plane.shape.width * plane.shape.density / 2)) + (plane.shape.width * plane.shape.density / 2));
+
+        let strength = 0.05 / Math.max((brushRadius - 6), 1);
+        for (let i = 0; i < brushRadius; i++) {
+            for (let dy = 0; dy < i; dy++) {
+                let dx = 0;
+                let sq = (i * i) - (dy * dy);
+                while ((dx * dx) < sq) {
+                    plane.shape.addVertexHeight(dx + planeLoc[0], dy + planeLoc[1], strength);
+                    plane.shape.addVertexHeight(dx + planeLoc[0], -dy + planeLoc[1] - 1, strength);
+                    plane.shape.addVertexHeight(-dx + planeLoc[0] - 1, dy + planeLoc[1], strength);
+                    plane.shape.addVertexHeight(-dx + planeLoc[0] - 1, -dy + planeLoc[1] - 1, strength);
                     dx++;
                 }
             }
@@ -1014,36 +1044,40 @@ export class Test extends Base_Scene {
         //if the mouse is held down and we are trying to paint on the canvas
         if (context.scratchpad.controls.mouse.isPainting) {
             //find the location we are trying to paint at
-            let dest = this.getClosestLocOnPlane(context, program_state);
-            //paint on the texture with a brush radius of 10 (the brush radius doesn't actually do anything yet)
-            this.drawnOnTexture(dest, 15);
-            this.drawnOnPlane(dest, 20);
-            this.plane.shape.copy_onto_graphics_card(context.context);
+            let dest = this.getClosestLocOnPlane(this.grass_plane, context, program_state);
+            if (this.isRaising === true) {
+                this.raisePlane(this.grass_plane, dest, 20);
+                this.grass_plane.shape.copy_onto_graphics_card(context.context);
+            }
+            else if (this.isLowering === true) {
+                this.lowerPlane(this.grass_plane, dest, 20);
+                this.grass_plane.shape.copy_onto_graphics_card(context.context);
+            }
+            else if (this.isOccluding === true){
+                this.drawnOnTexture(this.grassOcclusionTexture, this.grass_plane.shape.length, this.grass_plane.shape.width, dest, 13);
+                this.grassOcclusionTexture.copy_onto_graphics_card(context.context, false);
+            }
         }
+
+        for(let i = 0; i < 256 * 256 * 4; i++) {
+            if (this.grassOcclusionTexture.data[i] > 0){
+                this.grassOcclusionTexture.data[i] -= 8;
+            }
+        }
+        this.grassOcclusionTexture.copy_onto_graphics_card(context.context, false);
 
         //draw the plane and axis (axis was just so I could see if it is actually centered, I should honestly just remove it)
         let model_transform = Mat4.identity();
         this.shapes.axis.draw(context, program_state, model_transform, this.materials.plastic);
 
         //this.plane.drawObject(context, program_state);
-        this.ground_plane.drawObject(context, program_state);
-        this.water_plane.drawObject(context, program_state);
+        //this.ground_plane.drawObject(context, program_state);
 
-        for (let i = 0; i < this.offsets.length / 4; i++){
-            if (this.offsets[i * 4] > 0){
-                this.offsets[i * 4] -= 15;
-            }
-        }
-        this.texture.copy_onto_graphics_card(context.context, false);
-
-
-        for (let i = 0; i < this.grassMats.length; i++) {
-            this.grass_plane.material = this.grassMats[i];
+        for (let i = 0; i < 16; i++) {
+            this.grass_plane.material.shader.layer = i;
             this.grass_plane.drawObject(context, program_state);
         }
 
-
         this.water_plane.drawObject(context, program_state);
-
     }
 }
