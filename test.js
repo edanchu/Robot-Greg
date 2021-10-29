@@ -64,7 +64,7 @@ class Cube_Single_Strip extends Shape {
 
 // custom shape class that creates a triangle strip plane with a given length (z wise) and width (x wise) centered around a
 // given origin. Each vertex is placed such that there are density number of vertices between each unit distance
-// (eg: density 10 means that youll get 10 vertices between (0,0,0) and (1,0,0))
+// (eg: density 10 means that you'll get 10 vertices between (0,0,0) and (1,0,0))
 class Triangle_Strip_Plane extends Shape{
     constructor(length, width, origin, density){
         super("position", "normal", "texture_coord");
@@ -200,33 +200,42 @@ class Offset_shader extends Shader {
 class Skybox_Shader extends Shader {
 
     update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
-        const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform],
-            PCM = P.times(C).times(M);
-        context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false,
-            Matrix.flatten_2D_to_1D(PCM.transposed()));
+        const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform], PCM = P.times(C).times(M);
+        context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
+        context.uniform4fv(gpu_addresses.top_color, material.top_color);
+        context.uniform4fv(gpu_addresses.mid_color, material.mid_color);
+        context.uniform4fv(gpu_addresses.bottom_color, material.bottom_color);
     }
     shared_glsl_code() {
         return `precision mediump float;
-               
+               varying vec4 pos;
            `;
     }
 
     vertex_glsl_code() {
         return this.shared_glsl_code() + `
-               attribute vec3 position;                            
+               attribute vec3 position;    
                uniform mat4 projection_camera_model_transform;
         
                 void main(){
                     gl_Position = projection_camera_model_transform * vec4( position, 1.0 );
+                    pos = vec4(position, 1.0);
                 }`;
     }
 
     fragment_glsl_code() {
         return this.shared_glsl_code() + `
-               uniform vec4 color;
+               uniform vec4 top_color;
+               uniform vec4 mid_color;
+               uniform vec4 bottom_color;
                 
                 void main(){
-                    gl_FragColor = color;
+                    float topGrad = pow(max(0.0, pos.y), 0.75);
+                    float bottomGrad = pow(min(0.0, pos.y) * -1.0, 0.75);
+                    vec4 midColor = (1.0 - (topGrad + bottomGrad)) * mid_color;
+                    vec4 topColor = topGrad * top_color;
+                    vec4 bottomColor = bottomGrad * bottom_color;
+                    gl_FragColor = topColor + bottomColor + midColor;
                 }`;
     }
 }
@@ -394,6 +403,166 @@ class Grass_Shader extends Shader {
                         if (tex_color.r > 0.0){
                             discard;
                         }
+                    }
+                }`;
+    }
+}
+
+class Grass_Shader_Background extends Shader {
+    constructor(layer, num_lights = 2) {
+        super();
+        this.layer = layer;
+        this.num_lights = num_lights;
+    }
+
+    update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
+        const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform], PCM = P.times(C).times(M);
+        context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
+        context.uniform4fv(gpu_addresses.color, material.color);
+        context.uniform1f(gpu_addresses.time, graphics_state.animation_time / 1000.0);
+        context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform.transposed()));
+        context.uniform1f(gpu_addresses.layer, this.layer);
+
+        context.uniform1f(gpu_addresses.ambient, material.ambient);
+        context.uniform1f(gpu_addresses.diffusivity, material.diffusivity);
+        context.uniform1f(gpu_addresses.specularity, material.specularity);
+        context.uniform1f(gpu_addresses.smoothness, material.smoothness);
+        const O = vec4(0, 0, 0, 1), camera_center = graphics_state.camera_transform.times(O).to3();
+        context.uniform3fv(gpu_addresses.camera_center, camera_center);
+        const squared_scale = model_transform.reduce(
+            (acc, r) => {
+                return acc.plus(vec4(...r).times_pairwise(r))
+            }, vec4(0, 0, 0, 0)).to3();
+        context.uniform3fv(gpu_addresses.squared_scale, squared_scale);
+
+        if (!graphics_state.lights.length)
+            return;
+
+        const light_positions_flattened = [], light_colors_flattened = [];
+        for (let i = 0; i < 4 * graphics_state.lights.length; i++) {
+            light_positions_flattened.push(graphics_state.lights[Math.floor(i / 4)].position[i % 4]);
+            light_colors_flattened.push(graphics_state.lights[Math.floor(i / 4)].color[i % 4]);
+        }
+        context.uniform4fv(gpu_addresses.light_positions_or_vectors, light_positions_flattened);
+        context.uniform4fv(gpu_addresses.light_colors, light_colors_flattened);
+        context.uniform1fv(gpu_addresses.light_attenuation_factors, graphics_state.lights.map(l => l.attenuation));
+    }
+
+    shared_glsl_code() {
+        return `precision mediump float;
+        
+                varying vec4 worldPos;
+                uniform float time;
+                uniform float layer;
+                                
+                float random (vec2 value){
+                    return fract(sin(dot(value, vec2(94.8365, 47.053))) * 94762.9342);
+                }
+
+                float lerp(float a, float b, float percent){
+                    return (1.0 - percent) * a + (percent * b);
+                }
+
+                float perlinNoise (vec2 value){
+                   vec2 integer = floor(value);
+                   vec2 fractional = fract(value);
+                   fractional = fractional * fractional * (3.0 - 2.0 * fractional);
+
+                   value = abs(fract(value) - 0.5);
+                   float currCell = random(integer + vec2(0.0, 0.0));
+                   float rightCell = random(integer + vec2(1.0, 0.0));
+                   float bottomCell = random(integer + vec2(0.0, 1.0));
+                   float bottomRightCell = random(integer + vec2(1.0, 1.0));
+
+                   float currRow = lerp(currCell, rightCell, fractional.x);
+                   float lowerRow = lerp(bottomCell, bottomRightCell, fractional.x);
+                   float lerpedRandomVal = lerp(currRow, lowerRow, fractional.y);
+                   return lerpedRandomVal;
+                }
+
+                float PerlinNoise3Pass(vec2 value, float Scale){
+                    float outVal = 0.0;
+
+                    float frequency = pow(2.0, 0.0);
+                    float amplitude = pow(0.5, 3.0);
+                    outVal += perlinNoise(vec2(value.x * Scale / frequency, value.y * Scale / frequency)) * amplitude;
+
+                    frequency = pow(2.0, 1.0);
+                    amplitude = pow(0.5, 2.0);
+                    outVal += perlinNoise(vec2(value.x * Scale / frequency, value.y * Scale / frequency)) * amplitude;
+
+                    frequency = pow(2.0, 2.0);
+                    amplitude = pow(0.5, 1.0);
+                    outVal += perlinNoise(vec2(value.x * Scale / frequency, value.y * Scale / frequency)) * amplitude;
+
+                    return outVal;
+                }
+                
+                const int N_LIGHTS = ` + this.num_lights + `;
+                uniform float ambient, diffusivity, specularity, smoothness;
+                uniform vec4 light_positions_or_vectors[N_LIGHTS], light_colors[N_LIGHTS];
+                uniform float light_attenuation_factors[N_LIGHTS];
+                uniform vec3 squared_scale, camera_center;
+                uniform vec4 color;
+        
+                varying vec3 N, vertex_worldspace;
+                vec3 phong_model_lights( vec3 N, vec3 vertex_worldspace ){                                        
+                    vec3 E = normalize( camera_center - vertex_worldspace );
+                    vec3 result = vec3( 0.0 );
+                    for(int i = 0; i < N_LIGHTS; i++){
+                        vec3 surface_to_light_vector = light_positions_or_vectors[i].xyz - 
+                                                       light_positions_or_vectors[i].w * vertex_worldspace;                                             
+                        float distance_to_light = length( surface_to_light_vector );
+        
+                        vec3 L = normalize( surface_to_light_vector );
+                        vec3 H = normalize( L + E );
+
+                        float diffuse  =      max( dot( N, L ), 0.0 );
+                        float specular = pow( max( dot( N, H ), 0.0 ), smoothness );
+                        float attenuation = 1.0 / (1.0 + light_attenuation_factors[i] * distance_to_light * distance_to_light);
+                        
+                        vec3 light_contribution = color.xyz * light_colors[i].xyz * diffusivity * diffuse
+                                                                  + light_colors[i].xyz * specularity * specular;
+                        result += attenuation * light_contribution;
+                      }
+                    return result;
+                  }
+        
+            `;
+    }
+
+    vertex_glsl_code() {
+        return this.shared_glsl_code() + `
+                attribute vec3 position;
+                attribute vec3 normal;                       
+                uniform mat4 projection_camera_model_transform;
+                uniform mat4 model_transform;
+                
+                void main(){
+                    worldPos = model_transform * vec4(position, 1.0);
+                    float alpha = (layer / 10.0) * PerlinNoise3Pass(worldPos.xz + vec2(time * 2.0, time * 2.0), 2.0);
+                    gl_Position = projection_camera_model_transform * vec4(position.x + (0.02 * alpha), position.y + (0.04 * layer), position.z + (0.02 * alpha), 1.0);
+                    N = normalize( mat3( model_transform ) * normal / squared_scale);
+                    vertex_worldspace = (model_transform * vec4( position, 1.0 )).xyz;
+                }`;
+    }
+
+    fragment_glsl_code() {
+        return this.shared_glsl_code() + `
+                void main(){
+                    gl_FragColor = vec4(color.x * ambient + (layer / 70.0), color.y * ambient + (layer / 70.0), color.z * ambient + (layer / 70.0), 1.0 - exp(-0.3 * (30.0 - distance(vec4(0,0,0,0), worldPos))));
+                    gl_FragColor.xyz += phong_model_lights( normalize( N ), vertex_worldspace);
+                    
+                    if ((worldPos.x < 12.0 && worldPos.x > -12.0) && (worldPos.z < 12.0 && worldPos.z > -12.0)){
+                        discard;
+                    }
+                    if (layer > 0.0){
+                    float perlin = 1.0 - (1.0 - PerlinNoise3Pass(worldPos.xz, 50.0)) * 2.2;
+                    float white = 1.0 - (1.0 - perlinNoise(worldPos.xz)) * 40.0;
+                    float alpha = perlin * white - ((layer + 0.2) * 1.2 / 1.0);
+                    if (alpha < 0.0){
+                        discard;
+                    }
                     }
                 }`;
     }
@@ -899,7 +1068,7 @@ class Base_Scene extends Scene {
             ground: new Material(new defs.Phong_Shader(), {ambient: .4, diffusivity: .6, specularity: 0.02, color: hex_color("#29601c")}),
             offset: new Material(new Offset_shader(), {color: hex_color("#2b3b86"), texture: this.grassOcclusionTexture}),
             water: new Material(new Water_Shader(), {color: hex_color("#4e6ef6")}),
-            skybox: new Material(new Skybox_Shader()),
+            skybox: new Material(new Skybox_Shader(), {top_color: hex_color("#268b9a"), mid_color: hex_color("#d1eaf6"), bottom_color: hex_color("#3d8f2b")}),
             white: new Material(new defs.Basic_Shader()),
         };
 
@@ -909,8 +1078,15 @@ class Base_Scene extends Scene {
         this.isOccluding = false;
 
         //this.plane =  new Scene_Object(new Triangle_Strip_Plane(20,20, Vector3.create(0,0,0), 5), Mat4.translation(0,2,0), this.materials.offset, "TRIANGLE_STRIP");
-        this.water_plane = new Scene_Object(new Triangle_Strip_Plane(18,18, Vector3.create(0,0,0), 5), Mat4.translation(0,-0.7,0), new Material(new Phong_Water_Shader(), {color: hex_color("#4e6ef6"), ambient: 0.2, diffusivity: 0.7, specularity: 0.7, smoothness: 100}), "TRIANGLE_STRIP");
-        this.grass_plane = new Scene_Object(new Triangle_Strip_Plane(20, 20, Vector3.create(0,0,0), 7), Mat4.translation(0,0,0), new Material(new Grass_Shader(0), {color: hex_color("#38af18"), texture: this.grassOcclusionTexture, ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100}), "TRIANGLE_STRIP");
+        this.background_grass_plane = new Scene_Object(new Triangle_Strip_Plane(20, 20, Vector3.create(0,0,0), 5),
+            Mat4.scale(20,1,20), new Material(new Grass_Shader_Background(0), {color: hex_color("#38af18"),
+                texture: this.grassOcclusionTexture, ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100}), "TRIANGLE_STRIP");
+        this.water_plane = new Scene_Object(new Triangle_Strip_Plane(18,18, Vector3.create(0,0,0), 5), Mat4.translation(0,-0.7,0),
+            new Material(new Phong_Water_Shader(), {color: hex_color("#4e6ef6"), ambient: 0.2, diffusivity: 0.7, specularity: 0.7, smoothness: 100}), "TRIANGLE_STRIP");
+        this.grass_plane = new Scene_Object(new Triangle_Strip_Plane(20, 20, Vector3.create(0,0,0), 7),
+            Mat4.translation(0,0,0), new Material(new Grass_Shader(0), {color: hex_color("#38af18"),
+                texture: this.grassOcclusionTexture, ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100}), "TRIANGLE_STRIP");
+        this.skybox = new Scene_Object(new defs.Subdivision_Sphere(4), Mat4.scale(40, 40,40), this.materials.skybox);
     }
 
     display(context, program_state) {
@@ -921,7 +1097,7 @@ class Base_Scene extends Scene {
         program_state.projection_transform = Mat4.perspective(
             Math.PI/4 , context.width / context.height, 1, 100);
 
-        program_state.lights = [new Light(vec4(7, 2, 7, 0), color(1.1, 1.1, 1.1, 1), 10000), new Light(vec4(-7, 2, -7, 0), color(1, 1, 1, 1), 1000)];
+        program_state.lights = [new Light(vec4(7, 2, 7, 0), color(2, 2, 2, 1), 10000), new Light(vec4(-7, 2, -7, 0), color(2, 2, 2, 1), 1000)];
     }
 }
 
@@ -973,7 +1149,6 @@ export class Test extends Base_Scene {
         //our mouse's location as the origin, and a vector direction to the world space location of the far coordinate
         return plane.shape.closestVertexToRay(worldSpaceNear, worldSpaceFar.minus(worldSpaceNear).normalized());
     }
-
 
     drawnOnTexture(texture, length, width, location, brushRadius) {
         let textureLocPercent = Vector.create((location[0]-1) / (width / 2), -(location[2]-1) / (length / 2));
@@ -1065,8 +1240,13 @@ export class Test extends Base_Scene {
         }
         this.grassOcclusionTexture.copy_onto_graphics_card(context.context, false);
 
-
+        this.skybox.drawObject(context, program_state);
         this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plastic);
+
+        for (let i = 0; i < 8; i++) {
+            this.background_grass_plane.material.shader.layer = i;
+            this.background_grass_plane.drawObject(context, program_state);
+        }
 
         for (let i = 0; i < 16; i++) {
             this.grass_plane.material.shader.layer = i;
