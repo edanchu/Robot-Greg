@@ -540,7 +540,7 @@ class Grass_Shader_Background extends Shader {
                 
                 void main(){
                     worldPos = model_transform * vec4(position, 1.0);
-                    float alpha = (layer / 10.0) * PerlinNoise3Pass(worldPos.xz + vec2(time * 2.0, time * 2.0), 2.0);
+                    float alpha = (layer / 10.0) * PerlinNoise3Pass(worldPos.xz + random(worldPos.xz) + vec2(time * 1.0, time * 1.0), 2.0) - 1.0;
                     gl_Position = projection_camera_model_transform * vec4(position.x + (0.02 * alpha), position.y + (0.04 * layer), position.z + (0.02 * alpha), 1.0);
                     N = normalize( mat3( model_transform ) * normal / squared_scale);
                     vertex_worldspace = (model_transform * vec4( position, 1.0 )).xyz;
@@ -550,20 +550,160 @@ class Grass_Shader_Background extends Shader {
     fragment_glsl_code() {
         return this.shared_glsl_code() + `
                 void main(){
-                    gl_FragColor = vec4(color.x * ambient + (layer / 70.0), color.y * ambient + (layer / 70.0), color.z * ambient + (layer / 70.0), 1.0 - exp(-0.3 * (30.0 - distance(vec4(0,0,0,0), worldPos))));
+                    gl_FragColor = vec4(color.x * ambient + (layer / 70.0), color.y * ambient + (layer / 70.0), color.z * ambient + (layer / 70.0), 1.0 - exp(-0.5 * (40.0 - distance(vec4(0,0,0,0), worldPos))));
                     gl_FragColor.xyz += phong_model_lights( normalize( N ), vertex_worldspace);
                     
-                    if ((worldPos.x < 12.0 && worldPos.x > -12.0) && (worldPos.z < 12.0 && worldPos.z > -12.0)){
+                    if ((worldPos.x < 13.0 && worldPos.x > -11.5) && (worldPos.z < 13.0 && worldPos.z > -11.5)){
                         discard;
                     }
                     if (layer > 0.0){
-                    float perlin = 1.0 - (1.0 - PerlinNoise3Pass(worldPos.xz, 50.0)) * 2.2;
-                    float white = 1.0 - (1.0 - perlinNoise(worldPos.xz)) * 40.0;
-                    float alpha = perlin * white - ((layer + 0.2) * 1.2 / 1.0);
-                    if (alpha < 0.0){
-                        discard;
+                        float perlin = 1.0 - (1.0 - PerlinNoise3Pass(worldPos.xz, 55.0)) * 2.2;
+                        float white = 1.0 - (1.0 - perlinNoise(worldPos.xz)) * 40.0;
+                        float alpha = perlin * white - ((layer + 0.2) * 1.2 / 1.0);
+                        if (alpha < 0.0){
+                            discard;
+                        }
                     }
-                    }
+                }`;
+    }
+}
+
+class Grass_Shader_Background_Textured extends Shader {
+    constructor(layer, num_lights = 2) {
+        super();
+        this.layer = layer;
+        this.num_lights = num_lights;
+    }
+
+    update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
+        const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform], PCM = P.times(C).times(M);
+        context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
+        context.uniform4fv(gpu_addresses.color, material.color);
+        context.uniform1f(gpu_addresses.time, graphics_state.animation_time / 1000.0);
+        context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform.transposed()));
+        context.uniform1f(gpu_addresses.layer, this.layer);
+
+        context.uniform1f(gpu_addresses.ambient, material.ambient);
+        context.uniform1f(gpu_addresses.diffusivity, material.diffusivity);
+        context.uniform1f(gpu_addresses.specularity, material.specularity);
+        context.uniform1f(gpu_addresses.smoothness, material.smoothness);
+        const O = vec4(0, 0, 0, 1), camera_center = graphics_state.camera_transform.times(O).to3();
+        context.uniform3fv(gpu_addresses.camera_center, camera_center);
+        const squared_scale = model_transform.reduce(
+            (acc, r) => {
+                return acc.plus(vec4(...r).times_pairwise(r))
+            }, vec4(0, 0, 0, 0)).to3();
+        context.uniform3fv(gpu_addresses.squared_scale, squared_scale);
+
+        if (!graphics_state.lights.length)
+            return;
+
+        const light_positions_flattened = [], light_colors_flattened = [];
+        for (let i = 0; i < 4 * graphics_state.lights.length; i++) {
+            light_positions_flattened.push(graphics_state.lights[Math.floor(i / 4)].position[i % 4]);
+            light_colors_flattened.push(graphics_state.lights[Math.floor(i / 4)].color[i % 4]);
+        }
+        context.uniform4fv(gpu_addresses.light_positions_or_vectors, light_positions_flattened);
+        context.uniform4fv(gpu_addresses.light_colors, light_colors_flattened);
+        context.uniform1fv(gpu_addresses.light_attenuation_factors, graphics_state.lights.map(l => l.attenuation));
+
+        if (material.PerlinTexture && material.PerlinTexture.ready && material.WhiteTexture && material.WhiteTexture.ready) {
+            context.uniform1i(gpu_addresses.PerlinTexture, 0);
+            material.PerlinTexture.activate(context);
+            context.uniform1i(gpu_addresses.WhiteTexture, 1);
+            material.WhiteTexture.activate(context, 1);
+        }
+    }
+
+    shared_glsl_code() {
+        return `precision mediump float;
+        
+                varying vec4 worldPos;
+                uniform float time;
+                uniform float layer;
+                varying vec2 perlinTexPos, whiteTexPos;
+                uniform sampler2D PerlinTexture;
+                uniform sampler2D WhiteTexture;
+                
+                const int N_LIGHTS = ` + this.num_lights + `;
+                uniform float ambient, diffusivity, specularity, smoothness;
+                uniform vec4 light_positions_or_vectors[N_LIGHTS], light_colors[N_LIGHTS];
+                uniform float light_attenuation_factors[N_LIGHTS];
+                uniform vec3 squared_scale, camera_center;
+                uniform vec4 color;
+        
+                varying vec3 N, vertex_worldspace;
+                vec3 phong_model_lights( vec3 N, vec3 vertex_worldspace ){                                        
+                    vec3 E = normalize( camera_center - vertex_worldspace );
+                    vec3 result = vec3( 0.0 );
+                    for(int i = 0; i < N_LIGHTS; i++){
+                        vec3 surface_to_light_vector = light_positions_or_vectors[i].xyz - 
+                                                       light_positions_or_vectors[i].w * vertex_worldspace;                                             
+                        float distance_to_light = length( surface_to_light_vector );
+        
+                        vec3 L = normalize( surface_to_light_vector );
+                        vec3 H = normalize( L + E );
+
+                        float diffuse  =      max( dot( N, L ), 0.0 );
+                        float specular = pow( max( dot( N, H ), 0.0 ), smoothness );
+                        float attenuation = 1.0 / (1.0 + light_attenuation_factors[i] * distance_to_light * distance_to_light);
+                        
+                        vec3 light_contribution = color.xyz * light_colors[i].xyz * diffusivity * diffuse
+                                                                  + light_colors[i].xyz * specularity * specular;
+                        result += attenuation * light_contribution;
+                      }
+                    return result;
+                  }
+                  
+                float random (vec2 value){
+                    return fract(sin(dot(value, vec2(94.8365, 47.053))) * 94762.9342);
+                }
+        
+            `;
+    }
+
+    vertex_glsl_code() {
+        return this.shared_glsl_code() + `
+                attribute vec3 position;
+                attribute vec3 normal;                       
+                uniform mat4 projection_camera_model_transform;
+                uniform mat4 model_transform;
+                attribute vec2 texture_coord;
+                
+                void main(){
+                    worldPos = model_transform * vec4(position, 1.0);
+                    whiteTexPos = texture_coord * 15.0;
+                    perlinTexPos = texture_coord;
+                    float alpha = 0.0;
+                    gl_Position = projection_camera_model_transform * vec4(position, 1.0);
+                    N = normalize( mat3( model_transform ) * normal / squared_scale);
+                    vertex_worldspace = (model_transform * vec4( position, 1.0 )).xyz;
+                }`;
+    }
+
+    fragment_glsl_code() {
+        return this.shared_glsl_code() + `
+                void main(){
+                    gl_FragColor = vec4(color.x * ambient + (layer / 70.0), color.y * ambient + (layer / 70.0), color.z * ambient + (layer / 70.0), 1.0 - 0.0 * exp(-0.2 * (40.0 - distance(vec2(0,0), worldPos.xz))));
+                    gl_FragColor.xyz += phong_model_lights( normalize( N ), vertex_worldspace);
+                    
+                    //if ((worldPos.x < 12.0 && worldPos.x > -12.0) && (worldPos.z < 12.0 && worldPos.z > -12.0)){
+                    //    discard;
+                   // }
+                    //if (layer > 0.0){
+                        vec4 perlinTex3 = texture2D(PerlinTexture, perlinTexPos);
+                        vec4 whiteTex = texture2D(WhiteTexture, whiteTexPos);
+
+                        //float perlin = 1.0 - (1.0 - perlinTex2.x + perlinTex1.x) * 2.2;
+                        //float perlin = 1.0 - (1.0 - perlinTex2.x) * 2.0;
+                        float perlin = perlinTex3.x;
+                        float white = 1.0 - (1.0 - whiteTex.x) * 20.0;
+                        float alpha = (perlin * white) - ((layer + 0.2) * 1.0 / 1.5);
+                        gl_FragColor = perlinTex3;
+                        //if (alpha < 0.0){
+                        //    discard;
+                        //}
+                    //}
                 }`;
     }
 }
@@ -878,14 +1018,18 @@ class Water_Shader extends Shader{
 //most of this is documented in the tiny-graphics.js file, so I will just comment the changes I made from that
 class Dynamic_Texture extends Graphics_Card_Object {
     //im not sure why this assigns object properties this way, but I just kept what they did in tiny.js and added the length, width, etc designations
-    constructor(length, width, min_filter = "LINEAR_MIPMAP_LINEAR") {
+    constructor(length, width, data = null, min_filter = "LINEAR_MIPMAP_LINEAR") {
         super();
         this.length = length;
         this.width = width;
         this.min_filter = min_filter;
-        this.data = [];
-        for(let i = 0; i < this.length * this.width; i++){
-            this.data.push(0,0,0,255);
+
+        this.data = data;
+        if (this.data == null) {
+            this.data = [];
+            for (let i = 0; i < this.length * this.width; i++) {
+                this.data.push(0, 0, 0, 255);
+            }
         }
         //normally there would be declarations of an html IMAGE object here. We don't want to use a source file and want to
         //pass in our own data, so I removed that
@@ -1080,12 +1224,15 @@ class Base_Scene extends Scene {
         //this.plane =  new Scene_Object(new Triangle_Strip_Plane(20,20, Vector3.create(0,0,0), 5), Mat4.translation(0,2,0), this.materials.offset, "TRIANGLE_STRIP");
         this.background_grass_plane = new Scene_Object(new Triangle_Strip_Plane(20, 20, Vector3.create(0,0,0), 5),
             Mat4.scale(20,1,20), new Material(new Grass_Shader_Background(0), {color: hex_color("#38af18"),
-                texture: this.grassOcclusionTexture, ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100}), "TRIANGLE_STRIP");
+                ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100}), "TRIANGLE_STRIP");
+
         this.water_plane = new Scene_Object(new Triangle_Strip_Plane(18,18, Vector3.create(0,0,0), 5), Mat4.translation(0,-0.7,0),
             new Material(new Phong_Water_Shader(), {color: hex_color("#4e6ef6"), ambient: 0.2, diffusivity: 0.7, specularity: 0.7, smoothness: 100}), "TRIANGLE_STRIP");
-        this.grass_plane = new Scene_Object(new Triangle_Strip_Plane(20, 20, Vector3.create(0,0,0), 7),
+
+        this.grass_plane = new Scene_Object(new Triangle_Strip_Plane(26, 26, Vector3.create(0,0,0), 7),
             Mat4.translation(0,0,0), new Material(new Grass_Shader(0), {color: hex_color("#38af18"),
                 texture: this.grassOcclusionTexture, ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100}), "TRIANGLE_STRIP");
+
         this.skybox = new Scene_Object(new defs.Subdivision_Sphere(4), Mat4.scale(40, 40,40), this.materials.skybox);
     }
 
@@ -1097,7 +1244,7 @@ class Base_Scene extends Scene {
         program_state.projection_transform = Mat4.perspective(
             Math.PI/4 , context.width / context.height, 1, 100);
 
-        program_state.lights = [new Light(vec4(7, 2, 7, 0), color(2, 2, 2, 1), 10000), new Light(vec4(-7, 2, -7, 0), color(2, 2, 2, 1), 1000)];
+        program_state.lights = [new Light(vec4(30, 15, -20, 0), color(2, 2, 2, 1), 10000)];
     }
 }
 
@@ -1151,7 +1298,7 @@ export class Test extends Base_Scene {
     }
 
     drawnOnTexture(texture, length, width, location, brushRadius) {
-        let textureLocPercent = Vector.create((location[0]-1) / (width / 2), -(location[2]-1) / (length / 2));
+        let textureLocPercent = Vector.create((location[0]-1) / (width / 2), (location[2]-1) / (length / 2));
         let textureLoc = Vector.create(Math.ceil(textureLocPercent[0] * (texture.width / 2)) + (texture.width / 2), Math.ceil(textureLocPercent[1] * (texture.length / 2)) + (texture.length / 2));
 
         let strength = 20;
@@ -1193,9 +1340,10 @@ export class Test extends Base_Scene {
 
     raisePlane(plane, location, brushRadius) {
         let planeLocPercent = Vector.create((location[0]-1) / (plane.shape.length / 2), (location[2]-1) / (plane.shape.width / 2));
+        planeLocPercent[0] = Math.max(Math.min(0.75, planeLocPercent[0]), -0.75);
+        planeLocPercent[1] = Math.max(Math.min(0.75, planeLocPercent[1]), -0.75);
         let planeLoc = Vector.create(Math.ceil(planeLocPercent[0] * (plane.shape.length * plane.shape.density / 2)) + (plane.shape.length * plane.shape.density / 2),
             Math.ceil(planeLocPercent[1] * (plane.shape.width * plane.shape.density / 2)) + (plane.shape.width * plane.shape.density / 2));
-
         let strength = 0.05 / Math.max((brushRadius - 6), 1);
         for (let i = 0; i < brushRadius; i++) {
             for (let dy = 0; dy < i; dy++) {
@@ -1238,12 +1386,11 @@ export class Test extends Base_Scene {
                 this.grassOcclusionTexture.data[i] -= 8;
             }
         }
-        this.grassOcclusionTexture.copy_onto_graphics_card(context.context, false);
 
         this.skybox.drawObject(context, program_state);
         this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plastic);
 
-        for (let i = 0; i < 8; i++) {
+        for (let i = 0; i < 12; i++) {
             this.background_grass_plane.material.shader.layer = i;
             this.background_grass_plane.drawObject(context, program_state);
         }
