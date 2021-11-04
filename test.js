@@ -553,7 +553,7 @@ class Grass_Shader_Background extends Shader {
                     gl_FragColor = vec4(color.x * ambient + (layer / 70.0), color.y * ambient + (layer / 70.0), color.z * ambient + (layer / 70.0), 1.0 - exp(-0.5 * (40.0 - distance(vec4(0,0,0,0), worldPos))));
                     gl_FragColor.xyz += phong_model_lights( normalize( N ), vertex_worldspace);
                     
-                    if ((worldPos.x < 13.0 && worldPos.x > -11.5) && (worldPos.z < 13.0 && worldPos.z > -11.5)){
+                    if ((worldPos.x < 14.0 && worldPos.x > -11.5) && (worldPos.z < 14.0 && worldPos.z > -11.5)){
                         discard;
                     }
                     if (layer > 0.0){
@@ -1244,7 +1244,7 @@ class Base_Scene extends Scene {
         program_state.projection_transform = Mat4.perspective(
             Math.PI/4 , context.width / context.height, 1, 100);
 
-        program_state.lights = [new Light(vec4(30, 15, -20, 0), color(2, 2, 2, 1), 10000)];
+        program_state.lights = [new Light(vec4(30, 15, -20, 0), color(2, 2, 2, 0), 10000)];
     }
 }
 
@@ -1298,7 +1298,7 @@ export class Test extends Base_Scene {
     }
 
     drawnOnTexture(texture, length, width, location, brushRadius) {
-        let textureLocPercent = Vector.create((location[0]-1) / (width / 2), (location[2]-1) / (length / 2));
+        let textureLocPercent = Vector.create((location[0]-1) / (width / 2), -(location[2]-1) / (length / 2));
         let textureLoc = Vector.create(Math.ceil(textureLocPercent[0] * (texture.width / 2)) + (texture.width / 2), Math.ceil(textureLocPercent[1] * (texture.length / 2)) + (texture.length / 2));
 
         let strength = 20;
@@ -1377,7 +1377,6 @@ export class Test extends Base_Scene {
             }
             else if (this.isOccluding === true){
                 this.drawnOnTexture(this.grassOcclusionTexture, this.grass_plane.shape.length, this.grass_plane.shape.width, dest, 13);
-                this.grassOcclusionTexture.copy_onto_graphics_card(context.context, false);
             }
         }
 
@@ -1386,6 +1385,7 @@ export class Test extends Base_Scene {
                 this.grassOcclusionTexture.data[i] -= 8;
             }
         }
+        this.grassOcclusionTexture.copy_onto_graphics_card(context.context, false);
 
         this.skybox.drawObject(context, program_state);
         this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plastic);
