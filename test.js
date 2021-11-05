@@ -73,8 +73,8 @@ class Triangle_Strip_Plane extends Shape{
         this.density = density;
         let denseWidth = width * density;
         let denseLength = length * density;
-        //create vertex positions and texture coords. texture coords go from 0,1 in top left to 1,0 in bottom right and are
-        // just normalized by percentage of the way from 0 -> number of wanted vertices
+        // create vertex positions, normals and texture coords. texture coords go from 0,1 in top left to 1,0 in bottom right and are
+        // just interpolated by percentage of the way from 0 -> number of desired vertices
         for (let z = 0; z < denseWidth; z++){
             for (let x = 0; x < denseLength; x++){
                 this.arrays.position.push(Vector3.create(x/density - length/2 + origin[0] + 1,origin[1],z/density - width/2 + origin[2] + 1));
@@ -83,7 +83,7 @@ class Triangle_Strip_Plane extends Shape{
             }
         }
 
-        //create the index buffer by connecting points by right hand rule starting by top left, then one under, then one left of the original point
+        //create the index buffer by connecting points by right hand rule starting by top left, then one under, then one right of the original point and so on
         //in order for the triangle strips to work need to double up on the last index in every row, and the one right after. I can explain why in person
         for (let z = 0; z < denseWidth - 1; z++) {
             if (z > 0) this.indices.push(z * denseLength);
@@ -94,33 +94,36 @@ class Triangle_Strip_Plane extends Shape{
         }
     }
 
-    //find the closest vertex to a point in a given direction
-    closestVertexToRay(origin, direction){
+    //find the closest vertex to a point in a given direction, can specify if to count yAxis (height) difference or not
+    closestVertexToRay(origin, direction, yAxis = true){
         let minDistance = 999999999;
         let finalPos;
 
-        //loop through each vertex in the shape and find the closest one. distanceVec is the distance between the origin and the vertex you are looking at
-        //dest is the destination point made by moving the origin's location by distanceVec in the direction's direction
-        //distance is the distance between this destination point and the vertex
+        //loop through each vertex in the shape and find the closest one. distanceNoDir is the distance between the origin and the vertex you are looking at
+        //dest is the destination point made by moving the origin's location by distanceNoDir in the direction's direction
+        //distance is the distance between this destination point and the vertex we are checking
         for (let i = 0; i < this.arrays.position.length; i++){
-            let distanceNoDir = Vector3.create(origin[0], origin[1], origin[2]).minus(Vector3.create(this.arrays.position[i][0], 0, this.arrays.position[i][2])).norm();
+            let distanceNoDir = Vector3.create(origin[0], origin[1], origin[2]).minus(Vector3.create(this.arrays.position[i][0], yAxis ? this.arrays.position[i][1] : 0, this.arrays.position[i][2])).norm();
             let dest = Vector3.create(direction[0], direction[1], direction[2]).times(distanceNoDir).plus(Vector3.create(origin[0], origin[1], origin[2]));
-            let distance = Math.abs((dest.minus(Vector3.create(this.arrays.position[i][0], 0, this.arrays.position[i][2])).norm()));
+            let distance = Math.abs((dest.minus(Vector3.create(this.arrays.position[i][0], yAxis ? this.arrays.position[i][1] : 0, this.arrays.position[i][2])).norm()));
 
             if (distance < minDistance){
                 minDistance = distance;
-                finalPos = Vector3.create(this.arrays.position[i][0], this.arrays.position[i][1], this.arrays.position[i][2]);
+                finalPos = i;
             }
         }
-        return finalPos;
+        return this.arrays.position[finalPos];
     }
 
+    //updates a given vertex to a new height by changing the position and normal
     updateVertexHeight(x, z, newHeight){
         if ((x + (z * this.width * this.density)) < this.arrays.position.length && (x + (z * this.width * this.density)) >= 0) {
             this.arrays.position[x + (z * this.width * this.density)][1] = newHeight;
+            this.arrays.normal[x + (z * this.width * this.density)][1] = newHeight;
         }
     }
 
+    //adds to a given vertex's height (normal and position) up to a specified max value
     addVertexHeight(x, z, newHeight, max = 20){
         if ((x + (z * this.width * this.density)) < this.arrays.position.length && (x + (z * this.width * this.density)) >= 0) {
             if (this.arrays.position[x + (z * this.width * this.density)][1] + newHeight <= max) {
@@ -134,6 +137,7 @@ class Triangle_Strip_Plane extends Shape{
         }
     }
 
+    //removes from a given vertex's height (normal and position) down to a specified min value
     removeVertexHeight(x, z, newHeight, min = -10){
         if ((x + (z * this.width * this.density)) < this.arrays.position.length && (x + (z * this.width * this.density)) >= 0) {
             if (this.arrays.position[x + (z * this.width * this.density)][1] - newHeight >= min) {
@@ -148,55 +152,8 @@ class Triangle_Strip_Plane extends Shape{
     }
 }
 
-// custom shader class that takes in a texture and uses that texture's red value to offset the vertex's y position
-// paints the texture onto the shape as color. Eventually I think maybe we can pass in 2 textures, one as a heightmap
-// and one as the actual texture we want to be displayed. To learn how these work check out the examples in common.js
-class Offset_shader extends Shader {
-    update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
-        const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform], PCM = P.times(C).times(M);
-        context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
-        context.uniform4fv(gpu_addresses.color, material.color);
-
-        //upload the texture at the gpu's 0 index. The next line is what sets the texture we want to that index (at least, as far as I can tell)
-        context.uniform1i(gpu_addresses.texture, 0);
-        material.texture.activate(context);
-    }
-
-    //glsl code that goes into both the vertex and fragment shaders. the code here gives them both the texture we uploaded to the gpu
-    shared_glsl_code() {
-        return `precision mediump float;
-                uniform sampler2D texture;
-                varying vec2 f_tex_coord;   
-            `;
-    }
-
-    //sets each vertex's position to the its position + the red value of our texture
-    vertex_glsl_code() {
-        return this.shared_glsl_code() + `
-                attribute vec3 position;                         
-                uniform mat4 projection_camera_model_transform;
-                attribute vec2 texture_coord; 
-                
-                void main(){
-                    vec4 tex_color = texture2D(texture, texture_coord);
-                    gl_Position = projection_camera_model_transform * vec4( position.x, position.y + tex_color.r, position.z, 1.0 );
-                    //gl_Position = projection_camera_model_transform * vec4( position.x, position.y, position.z, 1.0 );
-                    f_tex_coord = texture_coord;
-                }`;
-    }
-
-    //sets each pixel's color
-    fragment_glsl_code() {
-        return this.shared_glsl_code() + `
-                uniform vec4 color;
-                void main(){
-                    vec4 tex_color = texture2D(texture, f_tex_coord);
-                    gl_FragColor = tex_color;
-                    //gl_FragColor = color;
-                }`;
-    }
-}
-
+//im not gonna comment on how the shaders work for now. If you want to know how they work, ask me in person and ill go through them
+//This shader creates the skybox by blending between 3 values, one for the horizon, under the horizon, and above the horizon
 class Skybox_Shader extends Shader {
 
     update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
@@ -240,6 +197,10 @@ class Skybox_Shader extends Shader {
     }
 }
 
+//the grass shader for the terrain. Has built in Phong lighting. To work correctly it needs to have its layer property set
+//and incremented in successive draw calls. I find that drawing with 16 layers looks good enough
+//doesn't draw grass when the vertex's world position is under a certain threshold (so no grass under water)
+//no grass will be drawn where the occlusion texture's red value is not 0
 class Grass_Shader extends Shader {
     constructor(layer, num_lights = 2) {
         super();
@@ -408,6 +369,8 @@ class Grass_Shader extends Shader {
     }
 }
 
+//similar to the shader above, but doesn't draw the plane in the center area and doesn't have the checks for height or occlusion tex.
+//Also, it has a easing function alpha fading far from the world origin for a fog effect.
 class Grass_Shader_Background extends Shader {
     constructor(layer, num_lights = 2) {
         super();
@@ -568,6 +531,7 @@ class Grass_Shader_Background extends Shader {
     }
 }
 
+//work in progress. I want to use a texture instead of procedural noise for the performance
 class Grass_Shader_Background_Textured extends Shader {
     constructor(layer, num_lights = 2) {
         super();
@@ -708,6 +672,8 @@ class Grass_Shader_Background_Textured extends Shader {
     }
 }
 
+//work in progress. At the moment it just uses voronoi noise to make highlights and has very low opacity. Eventually gonna use
+//depth pass, gerstner waves, tinting, fake specular, etc
 class Phong_Water_Shader extends Shader{
 
     constructor(num_lights = 2) {
@@ -831,199 +797,18 @@ class Phong_Water_Shader extends Shader{
     }
 }
 
-class Phong_Water_Shader_Caustics_Attempt extends Shader{
-
-    constructor(num_lights = 2) {
-        super();
-        this.num_lights = num_lights;
-    }
-
-    update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
-        const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform], PCM = P.times(C).times(M);
-        context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
-        context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform.transposed()));
-        context.uniform1f(gpu_addresses.time, graphics_state.animation_time / 1000);
-        context.uniform4fv(gpu_addresses.shape_color, material.color);
-        context.uniform1f(gpu_addresses.ambient, material.ambient);
-        context.uniform1f(gpu_addresses.diffusivity, material.diffusivity);
-        context.uniform1f(gpu_addresses.specularity, material.specularity);
-        context.uniform1f(gpu_addresses.smoothness, material.smoothness);
-        const O = vec4(0, 0, 0, 1), camera_center = graphics_state.camera_transform.times(O).to3();
-        context.uniform3fv(gpu_addresses.camera_center, camera_center);
-        const squared_scale = model_transform.reduce(
-            (acc, r) => {
-                return acc.plus(vec4(...r).times_pairwise(r))
-            }, vec4(0, 0, 0, 0)).to3();
-        context.uniform3fv(gpu_addresses.squared_scale, squared_scale);
-
-        if (!graphics_state.lights.length)
-            return;
-
-        const light_positions_flattened = [], light_colors_flattened = [];
-        for (let i = 0; i < 4 * graphics_state.lights.length; i++) {
-            light_positions_flattened.push(graphics_state.lights[Math.floor(i / 4)].position[i % 4]);
-            light_colors_flattened.push(graphics_state.lights[Math.floor(i / 4)].color[i % 4]);
-        }
-        context.uniform4fv(gpu_addresses.light_positions_or_vectors, light_positions_flattened);
-        context.uniform4fv(gpu_addresses.light_colors, light_colors_flattened);
-        context.uniform1fv(gpu_addresses.light_attenuation_factors, graphics_state.lights.map(l => l.attenuation));
-    }
-
-    shared_glsl_code() {
-        return `precision mediump float;
-                varying vec2 noisePos;
-                uniform float time;
-                
-                vec2 voronoiSRand(vec2 value){
-                  return vec2(sin(fract(sin(dot(sin(value), vec2(12.989, 78.233))) * 143758.5453) * (time + 150.0)) * 0.5 + 0.5, 
-                      cos(fract(sin(dot(sin(value), vec2(39.346, 11.135))) * 143758.5453) * (time + 13.0)) * 0.5 + 0.5);
-                }
-                
-                float voronoi(vec2 pos){
-                  vec2 baseCell = floor(pos);
-                  float minDist = 10.0;
-                  
-                  for (int i = -1; i <= 1; i++){
-                    for (int j = -1; j <= 1; j++){
-                      vec2 currentCell = baseCell + vec2(i, j);
-                      vec2 posInCell = currentCell + voronoiSRand(currentCell);
-                      minDist = min(distance(posInCell, pos), minDist);
-                    }
-                  }
-                  return minDist;
-                }
-                
-                const int N_LIGHTS = ` + this.num_lights + `;
-                uniform float ambient, diffusivity, specularity, smoothness;
-                uniform vec4 light_positions_or_vectors[N_LIGHTS], light_colors[N_LIGHTS];
-                uniform float light_attenuation_factors[N_LIGHTS];
-                uniform vec3 squared_scale, camera_center;
-                uniform vec4 shape_color;
-        
-                varying vec3 N, vertex_worldspace;
-                vec3 phong_model_lights( vec3 N, vec3 vertex_worldspace ){                                        
-                    vec3 E = normalize( camera_center - vertex_worldspace );
-                    vec3 result = vec3( 0.0 );
-                    for(int i = 0; i < N_LIGHTS; i++){
-                        vec3 surface_to_light_vector = light_positions_or_vectors[i].xyz - 
-                                                       light_positions_or_vectors[i].w * vertex_worldspace;                                             
-                        float distance_to_light = length( surface_to_light_vector );
-        
-                        vec3 L = normalize( surface_to_light_vector );
-                        vec3 H = normalize( L + E );
-
-                        float diffuse  =      max( dot( N, L ), 0.0 );
-                        float specular = pow( max( dot( N, H ), 0.0 ), smoothness );
-                        float attenuation = 1.0 / (1.0 + light_attenuation_factors[i] * distance_to_light * distance_to_light);
-                        
-                        vec3 light_contribution = shape_color.xyz * light_colors[i].xyz * diffusivity * diffuse
-                                                                  + light_colors[i].xyz * specularity * specular;
-                        result += attenuation * light_contribution;
-                      }
-                    return result;
-                  }
-            `;
-    }
-
-    //sets each vertex's position to the its position + the red value of our texture
-    vertex_glsl_code() {
-        return this.shared_glsl_code() + `
-                attribute vec3 position;
-                attribute vec3 normal;                         
-                uniform mat4 projection_camera_model_transform;
-                uniform mat4 model_transform;
-                
-                void main(){
-                    noisePos = (model_transform * vec4(position.x, position.y, position.z, 1.0)).xz * (2.0 / 1.0);
-                    float noise = min(voronoi(noisePos), voronoi(vec2(noisePos.x * 3.0, noisePos.y * 2.5)));
-                    gl_Position = projection_camera_model_transform * vec4( position.x, position.y + (noise / 10.0), position.z, 1.0 );
-                    N = normalize( mat3( model_transform ) * vec3(normal.x, normal.y + (noise / 10.0), normal.z) / squared_scale);
-                    vertex_worldspace = (model_transform * vec4( position, 1.0 )).xyz;
-                }`;
-    }
-
-    //sets each pixel's color
-    fragment_glsl_code() {
-        return this.shared_glsl_code() + `
-                
-                void main(){
-                    gl_FragColor = vec4(shape_color.x * ambient, shape_color.y * ambient, shape_color.z * ambient, 0.95);
-                    vec3 lighting = phong_model_lights( normalize( N ), vertex_worldspace);
-                    float noise = pow(min(voronoi(noisePos / 2.0), voronoi(vec2((noisePos.x / 3.0) + 10.0 , (noisePos.y / 3.0) + 10.0))), 3.0);
-                    gl_FragColor.xyz += lighting + noise * lighting * 3.0 + noise * (ambient / 3.0);
-                }`;
-    }
-}
-
-class Water_Shader extends Shader{
-
-    update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
-        const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform], PCM = P.times(C).times(M);
-        context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
-        context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform.transposed()));
-        context.uniform1f(gpu_addresses.time, graphics_state.animation_time / 1000);
-        context.uniform4fv(gpu_addresses.shape_color, material.color);
-    }
-
-    shared_glsl_code() {
-        return `precision mediump float;
-                varying vec2 noisePos;
-                uniform float time;
-                uniform vec4 shape_color;
-                
-                vec2 voronoiSRand(vec2 value){
-                  return vec2(sin(fract(sin(dot(sin(value), vec2(12.989, 78.233))) * 143758.5453) * (time + 150.0)) * 0.5 + 0.5, 
-                      cos(fract(sin(dot(sin(value), vec2(39.346, 11.135))) * 143758.5453) * (time + 13.0)) * 0.5 + 0.5);
-                }
-                
-                float voronoi(vec2 pos){
-                  vec2 baseCell = floor(pos);
-                  float minDist = 10.0;
-                  
-                  for (int i = -1; i <= 1; i++){
-                    for (int j = -1; j <= 1; j++){
-                      vec2 currentCell = baseCell + vec2(i, j);
-                      vec2 posInCell = currentCell + voronoiSRand(currentCell);
-                      minDist = min(distance(posInCell, pos), minDist);
-                    }
-                  }
-                  return minDist;
-                }
-            `;
-    }
-
-    //sets each vertex's position to the its position + the red value of our texture
-    vertex_glsl_code() {
-        return this.shared_glsl_code() + `
-                attribute vec3 position;
-                uniform mat4 projection_camera_model_transform;
-                uniform mat4 model_transform;
-                
-                void main(){
-                    noisePos = (model_transform * vec4(position.x, position.y, position.z, 1.0)).xz * (2.0 / 1.0);
-                    gl_Position = projection_camera_model_transform * vec4( position.x, position.y + (voronoi(noisePos) / 10.0), position.z, 1.0 );
-                }`;
-    }
-
-    //sets each pixel's color
-    fragment_glsl_code() {
-        return this.shared_glsl_code() + `
-                void main(){
-                    gl_FragColor = vec4(shape_color.xyz + (vec3(0.0,0.8, 0.6) * pow(voronoi(noisePos), 3.0)), 0.95);
-                }`;
-    }
-}
 //custom texture class that uses a software defined array as input instead of the html IMAGE object that the default class uses
-//need to pass in the length and width of the data as well as the data itself
+//need to pass in the length and width of the data. If no data passed in, will create a black texture of the given size
 //most of this is documented in the tiny-graphics.js file, so I will just comment the changes I made from that
 class Dynamic_Texture extends Graphics_Card_Object {
-    //im not sure why this assigns object properties this way, but I just kept what they did in tiny.js and added the length, width, etc designations
     constructor(length, width, data = null, min_filter = "LINEAR_MIPMAP_LINEAR") {
         super();
         this.length = length;
         this.width = width;
+        //this is a texture filtering thing, and I don't know much about it. its from the default texture class in tiny graphics
         this.min_filter = min_filter;
 
+        //copy in the data, or make new data if none is passed in
         this.data = data;
         if (this.data == null) {
             this.data = [];
@@ -1061,8 +846,9 @@ class Dynamic_Texture extends Graphics_Card_Object {
     }
 
     activate(context, texture_unit = 0) {
-        //the original version of this function had a queried a ready flag to see if the texture had been loaded from disk
+        //the original version of this function had a queried a ready flag to see if the texture had been loaded
         //we are providing our own data in software, so I removed both the flag and the test
+        //if passing multiple textures in to a shader, set texture unit so that you know which texture is which in the shader
         const gpu_instance = super.activate(context);
         context.activeTexture(context["TEXTURE" + texture_unit]);
         context.bindTexture(context.TEXTURE_2D, gpu_instance.texture_buffer_pointer);
@@ -1123,8 +909,8 @@ class Custom_Movement_Controls extends defs.Movement_Controls{
             + (this.z_axis[1] > 0 ? "Down " : "Up ") + (this.z_axis[2] > 0 ? "North" : "South")));
         this.new_line();
         //added a live readout of the mouse's position from the center of the screen in pixel coordinates
-        this.live_string(box => box.textContent = "- Mouse Pos: " + (this.mouse.from_center));
-        this.new_line();
+        //this.live_string(box => box.textContent = "- Mouse Pos: " + (this.mouse.from_center));
+        //this.new_line();
         this.new_line();
 
         this.key_triggered_button("Up", [" "], () => this.thrust[1] = -1, undefined, () => this.thrust[1] = 0);
@@ -1151,11 +937,11 @@ class Custom_Movement_Controls extends defs.Movement_Controls{
         this.new_line();
         this.key_triggered_button("(Un)freeze mouse look around", ["f"], () => this.look_around_locked ^= 1, "#8B8885");
         this.new_line();
-        this.key_triggered_button("Go to world origin", ["r"], () => {
-            this.matrix().set_identity(4, 4);
-            this.inverse().set_identity(4, 4)
-        }, "#8B8885");
-        this.new_line();
+        //this.key_triggered_button("Go to world origin", ["r"], () => {
+        //    this.matrix().set_identity(4, 4);
+        //    this.inverse().set_identity(4, 4)
+        //}, "#8B8885");
+        //this.new_line();
 
         this.key_triggered_button("Look at origin from front", ["1"], () => {
             this.inverse().set(Mat4.look_at(vec3(0, 0, 10), vec3(0, 0, 0), vec3(0, 1, 0)));
@@ -1200,7 +986,7 @@ class Base_Scene extends Scene {
     constructor() {
         super();
 
-        //creates our custom texture based on the heightmap data we just created
+        //creates a blank custom texture for the grass occlusion
         this.grassOcclusionTexture = new Dynamic_Texture(256, 256);
 
         this.shapes = {
@@ -1209,31 +995,29 @@ class Base_Scene extends Scene {
 
         this.materials = {
             plastic: new Material(new defs.Phong_Shader(), {ambient: .4, diffusivity: .6, color: hex_color("#ffffff")}),
-            ground: new Material(new defs.Phong_Shader(), {ambient: .4, diffusivity: .6, specularity: 0.02, color: hex_color("#29601c")}),
-            offset: new Material(new Offset_shader(), {color: hex_color("#2b3b86"), texture: this.grassOcclusionTexture}),
-            water: new Material(new Water_Shader(), {color: hex_color("#4e6ef6")}),
-            skybox: new Material(new Skybox_Shader(), {top_color: hex_color("#268b9a"), mid_color: hex_color("#d1eaf6"), bottom_color: hex_color("#3d8f2b")}),
-            white: new Material(new defs.Basic_Shader()),
         };
 
-
+        //member variables to track our interaction state
         this.isRaising = true;
         this.isLowering = false;
         this.isOccluding = false;
 
-        //this.plane =  new Scene_Object(new Triangle_Strip_Plane(20,20, Vector3.create(0,0,0), 5), Mat4.translation(0,2,0), this.materials.offset, "TRIANGLE_STRIP");
-        this.background_grass_plane = new Scene_Object(new Triangle_Strip_Plane(20, 20, Vector3.create(0,0,0), 5),
+        //create the background grass plane. low density since we aren't deforming it
+        this.background_grass_plane = new Scene_Object(new Triangle_Strip_Plane(20, 20, Vector3.create(0,0,0), 2),
             Mat4.scale(20,1,20), new Material(new Grass_Shader_Background(0), {color: hex_color("#38af18"),
                 ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100}), "TRIANGLE_STRIP");
 
-        this.water_plane = new Scene_Object(new Triangle_Strip_Plane(18,18, Vector3.create(0,0,0), 5), Mat4.translation(0,-0.7,0),
+        this.water_plane = new Scene_Object(new Triangle_Strip_Plane(5,5, Vector3.create(0,0,0), 5), Mat4.translation(-10,-0.7,-10).times(Mat4.scale(10,1,10)),
             new Material(new Phong_Water_Shader(), {color: hex_color("#4e6ef6"), ambient: 0.2, diffusivity: 0.7, specularity: 0.7, smoothness: 100}), "TRIANGLE_STRIP");
 
+        //the main grass plane has a higher density since we want the deformation to look smooth
         this.grass_plane = new Scene_Object(new Triangle_Strip_Plane(26, 26, Vector3.create(0,0,0), 7),
             Mat4.translation(0,0,0), new Material(new Grass_Shader(0), {color: hex_color("#38af18"),
                 texture: this.grassOcclusionTexture, ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100}), "TRIANGLE_STRIP");
 
-        this.skybox = new Scene_Object(new defs.Subdivision_Sphere(4), Mat4.scale(40, 40,40), this.materials.skybox);
+        //the skybox is just a sphere with the shader that makes the color look vaguely like sky above. We put everything inside this sphere
+        this.skybox = new Scene_Object(new defs.Subdivision_Sphere(4), Mat4.scale(40, 40,40),
+            new Material(new Skybox_Shader(), {top_color: hex_color("#268b9a"), mid_color: hex_color("#d1eaf6"), bottom_color: hex_color("#3d8f2b")}));
     }
 
     display(context, program_state) {
@@ -1244,6 +1028,7 @@ class Base_Scene extends Scene {
         program_state.projection_transform = Mat4.perspective(
             Math.PI/4 , context.width / context.height, 1, 100);
 
+        //im not sure why they have the light get remade every frame, same with the projection transform. Gonna ask the TA about it
         program_state.lights = [new Light(vec4(30, 15, -20, 0), color(2, 2, 2, 0), 10000)];
     }
 }
@@ -1271,8 +1056,8 @@ export class Test extends Base_Scene {
         });
     }
 
-    //helper function to get the location of the closest vertex on our plane to where the mouse is pointing
-    getClosestLocOnPlane(plane, context, program_state) {
+    //helper function to get the location of the closest vertex on our plane to where the mouse is pointing, can care about or disregard yAxis position of the plane
+    getClosestLocOnPlane(plane, context, program_state, yAxis = true) {
         //get the size of our canvas so we can know how far the mouse is from the center by normalizing as a percent from -1-1
         let rect = context.canvas.getBoundingClientRect();
         let mousePosPercent = Vector.create(2 * context.scratchpad.controls.mouse.from_center[0] / (rect.right - rect.left),
@@ -1293,14 +1078,22 @@ export class Test extends Base_Scene {
         worldSpaceFar = Vector.create(worldSpaceFar[0] / worldSpaceFar[3], worldSpaceFar[1] / worldSpaceFar[3], worldSpaceFar[2] / worldSpaceFar[3], 1);
 
         //this calls the intersection function of the plane shape to find which vertex is nearest to the mouse click. the function takes
-        //our mouse's location as the origin, and a vector direction to the world space location of the far coordinate
-        return plane.shape.closestVertexToRay(worldSpaceNear, worldSpaceFar.minus(worldSpaceNear).normalized());
+        //our mouse's location as the origin, and a vector direction to the world space location of the far coordinate, also a bool to see if to count yAxis position or not
+        return plane.shape.closestVertexToRay(worldSpaceNear, worldSpaceFar.minus(worldSpaceNear).normalized(), yAxis);
     }
 
+    //function that draws on a given texture at a given location with a given brush radius in pixels. need to pass in the world
+    //mapping of the textures size. For example, if we want the texture to cover from -10 to 10 on the x and z axies, we pass in a width and
+    //height of 20. This code assumes the texture is centered at the origin. This can be extended to an arbitrary center if we want
+    //currently only draws on the red channel
     drawnOnTexture(texture, length, width, location, brushRadius) {
+        //map from location on the plane, to location on the texture. Same way we do viewport and window transforms
         let textureLocPercent = Vector.create((location[0]-1) / (width / 2), -(location[2]-1) / (length / 2));
         let textureLoc = Vector.create(Math.ceil(textureLocPercent[0] * (texture.width / 2)) + (texture.width / 2), Math.ceil(textureLocPercent[1] * (texture.length / 2)) + (texture.length / 2));
 
+        //use a line by line circle algorithm to draw a circle at the center with a radius of brushradius.
+        //draws the circle multiple times with radius from 0 to brushradius so that the center of the circle has a
+        //higher value than the lower parts of the circle
         let strength = 20;
         for (let i = 0; i < brushRadius; i++) {
             for (let dy = 0; dy < i; dy++) {
@@ -1317,11 +1110,13 @@ export class Test extends Base_Scene {
         }
     }
 
+    //lowers a given plane's vertices in a circle given by brushradius around a point. uses the same logic as the draw on texture function
     lowerPlane(plane, location, brushRadius) {
         let planeLocPercent = Vector.create((location[0]-1) / (plane.shape.length / 2), (location[2]-1) / (plane.shape.width / 2));
         let planeLoc = Vector.create(Math.ceil(planeLocPercent[0] * (plane.shape.length * plane.shape.density / 2)) + (plane.shape.length * plane.shape.density / 2),
             Math.ceil(planeLocPercent[1] * (plane.shape.width * plane.shape.density / 2)) + (plane.shape.width * plane.shape.density / 2));
 
+        //attenuate strength based on brush radius so that large brushes don't raise terrain much faster than small brushes
         let strength = 0.05 / Math.max((brushRadius - 6), 1);
         for (let i = 0; i < brushRadius; i++) {
             for (let dy = 0; dy < i; dy++) {
@@ -1338,6 +1133,7 @@ export class Test extends Base_Scene {
         }
     }
 
+    //exact same implementation as lowerPlane except it raises the plane
     raisePlane(plane, location, brushRadius) {
         let planeLocPercent = Vector.create((location[0]-1) / (plane.shape.length / 2), (location[2]-1) / (plane.shape.width / 2));
         planeLocPercent[0] = Math.max(Math.min(0.75, planeLocPercent[0]), -0.75);
@@ -1365,21 +1161,26 @@ export class Test extends Base_Scene {
 
         //if the mouse is held down and we are trying to paint on the canvas
         if (context.scratchpad.controls.mouse.isPainting) {
-            //find the location we are trying to paint at
-            let dest = this.getClosestLocOnPlane(this.grass_plane, context, program_state);
+            //if we are raising terrain, find out location on the plane without considering y axis and then edit the shape and copy the new shape to the graphics card
             if (this.isRaising === true) {
+                let dest = this.getClosestLocOnPlane(this.grass_plane, context, program_state, false);
                 this.raisePlane(this.grass_plane, dest, 20);
                 this.grass_plane.shape.copy_onto_graphics_card(context.context);
             }
+            //same as above
             else if (this.isLowering === true) {
+                let dest = this.getClosestLocOnPlane(this.grass_plane, context, program_state, false);
                 this.lowerPlane(this.grass_plane, dest, 20);
                 this.grass_plane.shape.copy_onto_graphics_card(context.context);
             }
+            //if we are occluding, then draw on the texture, but here we care about yAxis position. The texture is sent to the graphics card later, so not sent now
             else if (this.isOccluding === true){
+                let dest = this.getClosestLocOnPlane(this.grass_plane, context, program_state, true);
                 this.drawnOnTexture(this.grassOcclusionTexture, this.grass_plane.shape.length, this.grass_plane.shape.width, dest, 13);
             }
         }
 
+        //to make the grass slowly come back after painted away, just subtract from the red value of the texture every frame
         for(let i = 0; i < 256 * 256 * 4; i++) {
             if (this.grassOcclusionTexture.data[i] > 0){
                 this.grassOcclusionTexture.data[i] -= 8;
@@ -1390,11 +1191,14 @@ export class Test extends Base_Scene {
         this.skybox.drawObject(context, program_state);
         this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plastic);
 
+        //with the way the grass shader works, you need to draw it a number of times, each time specifying which level of the grass you want to draw
+        //for the background 8-12 layers look good
         for (let i = 0; i < 12; i++) {
             this.background_grass_plane.material.shader.layer = i;
             this.background_grass_plane.drawObject(context, program_state);
         }
 
+        //16 layers looks good for the main grass portion. can increase or decrease later if we want
         for (let i = 0; i < 16; i++) {
             this.grass_plane.material.shader.layer = i;
             this.grass_plane.drawObject(context, program_state);
