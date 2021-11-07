@@ -1,4 +1,4 @@
-import {tiny} from './tiny-graphics';
+import {tiny} from './tiny-graphics.js';
 const {vec3, vec4, vec, color, Matrix, Mat4, Light, Shape, Material, Shader, Texture, Scene} = tiny;
 
 //im not gonna comment on how the shaders work for now. If you want to know how they work, ask me in person and ill go through them
