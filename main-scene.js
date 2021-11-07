@@ -1,5 +1,5 @@
 import {defs, tiny} from './examples/common.js';
-import {Test} from "./test.js"
+import {Team_Project} from "./test.js";
 // Pull these names into this module's scope for convenience:
 const {
     Vector, Vector3, vec, vec3, vec4, color, Matrix, Mat4, Light, Shape, Material, Shader, Texture, Scene,
@@ -14,14 +14,14 @@ const {
 //                      (On the web, a server should instead just pack all these as well
 //                      as common.js into one file for you, such as "dependencies.js")
 
-Object.assign(defs, {Test});
+Object.assign(defs, {Team_Project});
 
 // ******************** End extra step
 
 // (Can define Main_Scene's class here)
 
 //const Main_Scene = Transforms_Sandbox;
-const Main_Scene = Test;
+const Main_Scene = Team_Project;
 const Additional_Scenes = [];
 
 export {Main_Scene, Additional_Scenes, Canvas_Widget, Code_Widget, Text_Widget, defs}
