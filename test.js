@@ -1,5 +1,5 @@
 import {defs, tiny} from './examples/common.js';
-import {Skybox_Shader, PlainShader, Grass_Shader_Shadow, Grass_Shader_Background, Phong_Water_Shader} from './shaders.js';
+import {Skybox_Shader, PlainShader, Grass_Shader_Shadow, Grass_Shader_Background, Phong_Water_Shader, Grass_Shader_Shadow_Textured} from './shaders.js';
 import {Triangle_Strip_Plane, Dynamic_Texture, Custom_Movement_Controls, Buffered_Texture, Scene_Object} from './utils.js';
 const {
     Vector, Vector3, vec, vec3, vec4, color, hex_color, Matrix, Mat4, Light, Shape, Material, Scene, Shader, Graphics_Card_Object, Texture
@@ -141,6 +141,8 @@ export class Team_Project extends Scene {
     //lowers a given plane's vertices in a circle given by brushradius around a point. uses the same logic as the draw on texture function
     lowerPlane(plane, location, brushRadius) {
         let planeLocPercent = Vector.create((location[0]-1) / (plane.shape.length / 2), (location[2]-1) / (plane.shape.width / 2));
+        planeLocPercent[0] = Math.max(Math.min(0.75, planeLocPercent[0]), -0.75);
+        planeLocPercent[1] = Math.max(Math.min(0.75, planeLocPercent[1]), -0.75);
         let planeLoc = Vector.create(Math.ceil(planeLocPercent[0] * (plane.shape.length * plane.shape.density / 2)) + (plane.shape.length * plane.shape.density / 2),
             Math.ceil(planeLocPercent[1] * (plane.shape.width * plane.shape.density / 2)) + (plane.shape.width * plane.shape.density / 2));
 
@@ -199,45 +201,6 @@ export class Team_Project extends Scene {
         program_state.camera_inverse = cameraStorage;
     }
 
-    render_scene(context, program_state, depthPass) {
-        const t = program_state.animation_time;
-
-        if(depthPass === false) {
-            this.skybox.drawObject(context, program_state);
-            this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plastic);
-
-            //with the way the grass shader works, you need to draw it a number of times, each time specifying which level of the grass you want to draw
-            //for the background 8-12 layers look good
-            for (let i = 0; i < 12; i++) {
-                this.background_grass_plane.material.shader.layer = i;
-                this.background_grass_plane.drawObject(context, program_state);
-            }
-
-            //16 layers looks good for the main grass portion. can increase or decrease later if we want
-            this.grass_plane.material.light_depth_texture = this.lightDepthTexture;
-            this.grass_plane.material.draw_shadow = true;
-            for (let i = 0; i < 16; i++) {
-                this.grass_plane.material.shader.layer = i;
-                this.grass_plane.drawObject(context, program_state);
-                //this.grass_plane.material.fake_shadow_layer = true;
-                //this.grass_plane.drawObject(context, program_state);
-                //this.grass_plane.material.fake_shadow_layer = false;
-            }
-
-            this.water_plane.drawObject(context, program_state);
-        }
-        else{
-            this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plain);
-            this.background_grass_plane.drawOverrideMaterial(context, program_state, this.materials.plain);
-            //this.grass_plane.drawOverrideMaterial(context, program_state, this.materials.plain);
-            this.grass_plane.material.draw_shadow = false;
-            for (let i = 0; i < 32; i++) {
-                this.grass_plane.material.shader.layer = i;
-                this.grass_plane.drawObject(context, program_state);
-            }
-        }
-    }
-
     constructor() {
         super();
 
@@ -273,40 +236,88 @@ export class Team_Project extends Scene {
 
         //create the background grass plane. low density since we aren't deforming it
         this.background_grass_plane = new Scene_Object(new Triangle_Strip_Plane(20, 20, Vector3.create(0,0,0), 2),
-            Mat4.scale(5,1,5), new Material(new Grass_Shader_Background(0), {grass_color: hex_color("#38af18"), ground_color: hex_color("#544101"),
-                ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100}), "TRIANGLE_STRIP");
+            Mat4.scale(5,1,5), new Material(new Grass_Shader_Background(0), {grass_color: hex_color("#2d8f06"), ground_color: hex_color("#988504"),
+                ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100, fake_shadow_layer: false}), "TRIANGLE_STRIP");
 
         this.water_plane = new Scene_Object(new Triangle_Strip_Plane(5,5, Vector3.create(0,0,0), 5), Mat4.translation(-10,-0.7,-10).times(Mat4.scale(10,1,10)),
             new Material(new Phong_Water_Shader(), {color: hex_color("#4e6ef6"), ambient: 0.2, diffusivity: 0.7, specularity: 0.7, smoothness: 100}), "TRIANGLE_STRIP");
 
         //the main grass plane has a higher density since we want the deformation to look smooth
         this.grass_plane = new Scene_Object(new Triangle_Strip_Plane(26, 26, Vector3.create(0,0,0), 7),
-            Mat4.translation(0,0,0), new Material(new Grass_Shader_Shadow(0), {grass_color: hex_color("#38af18"), ground_color: hex_color("#544101"),
+            Mat4.translation(0,0,0), new Material(new Grass_Shader_Shadow(0), {grass_color: hex_color("#2d8f06"), ground_color: hex_color("#988504"),
                 texture: this.grassOcclusionTexture, ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100, fake_shadow_layer: false,
                 light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat}), "TRIANGLE_STRIP");
+
+        // this.noiseTexture1 = new Texture('assets/Blue.png');
+        // this.noiseTexture2 = new Texture('assets/Perlin2.png');
+        //
+        // this.grass_plane = new Scene_Object(new Triangle_Strip_Plane(26, 26, Vector3.create(0,0,0), 7),
+        //     Mat4.translation(0,0,0), new Material(new Grass_Shader_Shadow_Textured(0), {grass_color: hex_color("#38af18"), ground_color: hex_color("#544101"),
+        //         texture: this.grassOcclusionTexture, ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100, fake_shadow_layer: false,
+        //         light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat,
+        //         noiseTexture1: this.noiseTexture1, noiseTexture2: this.noiseTexture2}), "TRIANGLE_STRIP");
 
         //the skybox is just a sphere with the shader that makes the color look vaguely like sky above. We put everything inside this sphere
         this.skybox = new Scene_Object(new defs.Subdivision_Sphere(4), Mat4.scale(40, 40,40),
             new Material(new Skybox_Shader(), {top_color: hex_color("#268b9a"), mid_color: hex_color("#d1eaf6"), bottom_color: hex_color("#3d8f2b")}));
 
-        this.init_ok = false;
+    }
+
+    render_scene(context, program_state, depthPass) {
+        const t = program_state.animation_time;
+
+        if(depthPass === false) {
+            this.skybox.drawObject(context, program_state);
+            this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plastic);
+
+            //with the way the grass shader works, you need to draw it a number of times, each time specifying which level of the grass you want to draw
+            //for the background 8-12 layers look good
+            for (let i = 0; i < 16; i+= 2) {
+                this.background_grass_plane.material.shader.layer = i;
+                this.background_grass_plane.drawObject(context, program_state);
+                if (i % 4 !== 0) {
+                    this.background_grass_plane.material.fake_shadow_layer = true;
+                    this.background_grass_plane.drawObject(context, program_state);
+                    this.background_grass_plane.material.fake_shadow_layer = false;
+                }
+            }
+
+            //16 layers looks good for the main grass portion. can increase or decrease later if we want
+            this.grass_plane.material.light_depth_texture = this.lightDepthTexture;
+            this.grass_plane.material.draw_shadow = true;
+            for (let i = 0; i < 18; i++) {
+                this.grass_plane.material.shader.layer = i;
+                this.grass_plane.drawObject(context, program_state);
+                this.grass_plane.material.fake_shadow_layer = true;
+                this.grass_plane.drawObject(context, program_state);
+                this.grass_plane.material.fake_shadow_layer = false;
+            }
+
+            this.water_plane.drawObject(context, program_state);
+        }
+        else{
+            this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plain);
+            this.background_grass_plane.drawOverrideMaterial(context, program_state, this.materials.plain);
+            //this.grass_plane.drawOverrideMaterial(context, program_state, this.materials.plain);
+            this.grass_plane.material.draw_shadow = false;
+            for (let i = 0; i < 32; i+= 4) {
+                this.grass_plane.material.shader.layer = i;
+                this.grass_plane.drawObject(context, program_state);
+            }
+        }
     }
 
     display(context, program_state) {
         if (!context.scratchpad.controls) {
             this.children.push(context.scratchpad.controls = new Custom_Movement_Controls());
-            program_state.set_camera(Mat4.look_at(vec3(7, 12, 23), vec3(1, 0, 0), vec3(0, 1, 0)));
+            program_state.set_camera(Mat4.look_at(vec3(9, 15, 22), vec3(1, 0, 0), vec3(0, 1, 0)));
             program_state.projection_transform = Mat4.perspective(Math.PI / 4, context.width / context.height, 1, 500);
-        }
 
-        if (!this.init_ok) {
             const ext = context.context.getExtension('WEBGL_depth_texture');
             if (!ext) {
                 return alert('need WEBGL_depth_texture');  // eslint-disable-line
             }
             this.texture_buffer_init(context.context);
-
-            this.init_ok = true;
         }
 
         program_state.lights = [new Light(this.light_position, this.light_color, 10000)];

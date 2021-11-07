@@ -1233,7 +1233,7 @@ const Texture = tiny.Texture =
             }
 
             gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.image);
-            if (this.min_filter == "LINEAR_MIPMAP_LINEAR")
+            if (this.min_filter === "LINEAR_MIPMAP_LINEAR")
                 gl.generateMipmap(gl.TEXTURE_2D);
             // If the user picked tri-linear sampling (the default) then generate
             // the necessary "mips" of the texture and store them on the GPU with it.
@@ -1321,7 +1321,7 @@ const Webgl_Manager = tiny.Webgl_Manager =
                 })(window);
         }
 
-        set_size(dimensions = [1080, 600]) {
+        set_size(dimensions = [1920, 1080]) {
             // set_size():  Allows you to re-size the canvas anytime.  To work, it must change the
             // size in CSS, wait for style to re-flow, and then change the size again within canvas
             // attributes.  Both are needed because the attributes on a canvas ave a special effect
