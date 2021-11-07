@@ -79,7 +79,8 @@ class Triangle_Strip_Plane extends Shape{
             for (let x = 0; x < denseLength; x++){
                 this.arrays.position.push(Vector3.create(x/density - length/2 + origin[0] + 1,origin[1],z/density - width/2 + origin[2] + 1));
                 this.arrays.texture_coord.push(Vector.create(x/denseLength,1 - (z/denseWidth)));
-                this.arrays.normal.push(Vector3.create(x/density - length/2 + origin[0] + 1,origin[1],z/density - width/2 + origin[2] + 1));
+                //this.arrays.normal.push(Vector3.create(x/density - length/2 + origin[0] + 1,origin[1],z/density - width/2 + origin[2] + 1));
+                this.arrays.normal.push(Vector3.create(0,1,0));
             }
         }
 
@@ -128,11 +129,19 @@ class Triangle_Strip_Plane extends Shape{
         if ((x + (z * this.width * this.density)) < this.arrays.position.length && (x + (z * this.width * this.density)) >= 0) {
             if (this.arrays.position[x + (z * this.width * this.density)][1] + newHeight <= max) {
                 this.arrays.position[x + (z * this.width * this.density)][1] += newHeight;
-                this.arrays.normal[x + (z * this.width * this.density)][1] += newHeight;
+                for(let i = -1; i < 2; i++){
+                    for(let j = -1; j < 2; j++) {
+                        if (((x + i) + ((z + j) * this.width * this.density)) < this.arrays.position.length && ((x + i) + ((z + j) * this.width * this.density)) >= 0){
+                            this.arrays.normal[(x + i) + ((z + j) * this.width * this.density)][0] =
+                                Math.max(Math.min(this.arrays.normal[(x + i) + ((z + j) * this.width * this.density)][0] + i * 0.001, 0.12),  -0.12);
+                            this.arrays.normal[(x + i) + ((z + j) * this.width * this.density)][2] =
+                                Math.max(Math.min(this.arrays.normal[(x + i) + ((z + j) * this.width * this.density)][2] + j * 0.001, 0.12), -0.12);
+                        }
+                    }
+                }
             }
             else {
                 this.arrays.position[x + (z * this.width * this.density)][1] = max;
-                this.arrays.normal[x + (z * this.width * this.density)][1] = max;
             }
         }
     }
@@ -142,11 +151,20 @@ class Triangle_Strip_Plane extends Shape{
         if ((x + (z * this.width * this.density)) < this.arrays.position.length && (x + (z * this.width * this.density)) >= 0) {
             if (this.arrays.position[x + (z * this.width * this.density)][1] - newHeight >= min) {
                 this.arrays.position[x + (z * this.width * this.density)][1] -= newHeight;
-                this.arrays.normal[x + (z * this.width * this.density)][1] -= newHeight;
+                for(let i = -1; i < 2; i++){
+                    for(let j = -1; j < 2; j++) {
+                        if (((x + i) + ((z + j) * this.width * this.density)) < this.arrays.position.length && ((x + i) + ((z + j) * this.width * this.density)) >= 0){
+                            this.arrays.normal[(x + i) + ((z + j) * this.width * this.density)][0] =
+                                Math.max(Math.min(this.arrays.normal[(x + i) + ((z + j) * this.width * this.density)][0] - i * 0.0015, 0.12),  -0.12);
+                            this.arrays.normal[(x + i) + ((z + j) * this.width * this.density)][2] =
+                                Math.max(Math.min(this.arrays.normal[(x + i) + ((z + j) * this.width * this.density)][2] - j * 0.0015, 0.12), -0.12);
+                        }
+                    }
+                }
             }
             else {
                 this.arrays.position[x + (z * this.width * this.density)][1] = min;
-                this.arrays.normal[x + (z * this.width * this.density)][1] = min;
+                //this.arrays.normal[x + (z * this.width * this.density)][1] = min;
             }
         }
     }
@@ -193,6 +211,35 @@ class Skybox_Shader extends Shader {
                     vec4 topColor = topGrad * top_color;
                     vec4 bottomColor = bottomGrad * bottom_color;
                     gl_FragColor = topColor + bottomColor + midColor;
+                }`;
+    }
+}
+
+class PlainShader extends Shader {
+
+    update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
+        const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform], PCM = P.times(C).times(M);
+        context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
+    }
+    shared_glsl_code() {
+        return `precision mediump float;
+           `;
+    }
+
+    vertex_glsl_code() {
+        return this.shared_glsl_code() + `
+               attribute vec3 position;    
+               uniform mat4 projection_camera_model_transform;
+        
+                void main(){
+                    gl_Position = projection_camera_model_transform * vec4( position, 1.0 );
+                }`;
+    }
+
+    fragment_glsl_code() {
+        return this.shared_glsl_code() + `
+                void main(){
+                    gl_FragColor = vec4(1.0,1.0,1.0,1.0);
                 }`;
     }
 }
@@ -369,6 +416,268 @@ class Grass_Shader extends Shader {
     }
 }
 
+class Grass_Shader_Shadow extends Shader {
+    constructor(layer, num_lights = 2) {
+        super();
+        this.layer = layer;
+        this.num_lights = num_lights;
+    }
+
+    update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
+        const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform], PCM = P.times(C).times(M);
+        context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
+        context.uniform4fv(gpu_addresses.ground_color, material.ground_color);
+        context.uniform4fv(gpu_addresses.grass_color, material.grass_color);
+
+        context.uniform1f(gpu_addresses.time, graphics_state.animation_time / 1000.0);
+        context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform.transposed()));
+        context.uniform1f(gpu_addresses.layer, this.layer);
+        context.uniform1i(gpu_addresses.texture, 0);
+        material.texture.activate(context);
+        context.uniform1i(gpu_addresses.fake_shadow_layer, material.fake_shadow_layer);
+        context.uniform1f(gpu_addresses.ambient, material.ambient);
+        context.uniform1f(gpu_addresses.diffusivity, material.diffusivity);
+        context.uniform1f(gpu_addresses.specularity, material.specularity);
+        context.uniform1f(gpu_addresses.smoothness, material.smoothness);
+        const O = vec4(0, 0, 0, 1), camera_center = graphics_state.camera_transform.times(O).to3();
+        context.uniform3fv(gpu_addresses.camera_center, camera_center);
+        const squared_scale = model_transform.reduce(
+            (acc, r) => {
+                return acc.plus(vec4(...r).times_pairwise(r))
+            }, vec4(0, 0, 0, 0)).to3();
+        context.uniform3fv(gpu_addresses.squared_scale, squared_scale);
+
+        if (!graphics_state.lights.length)
+            return;
+
+        const light_positions_flattened = [], light_colors_flattened = [];
+        for (let i = 0; i < 4 * graphics_state.lights.length; i++) {
+            light_positions_flattened.push(graphics_state.lights[Math.floor(i / 4)].position[i % 4]);
+            light_colors_flattened.push(graphics_state.lights[Math.floor(i / 4)].color[i % 4]);
+        }
+        context.uniform4fv(gpu_addresses.light_positions_or_vectors, light_positions_flattened);
+        context.uniform4fv(gpu_addresses.light_colors, light_colors_flattened);
+        context.uniform1fv(gpu_addresses.light_attenuation_factors, graphics_state.lights.map(l => l.attenuation));
+
+        context.uniformMatrix4fv(gpu_addresses.light_view_mat, false, Matrix.flatten_2D_to_1D(material.light_view_mat.transposed()));
+        context.uniformMatrix4fv(gpu_addresses.light_proj_mat, false, Matrix.flatten_2D_to_1D(material.light_proj_mat.transposed()));
+        context.uniform1i(gpu_addresses.draw_shadow, material.draw_shadow);
+        context.uniform1f(gpu_addresses.light_depth_bias, 0.003);
+        context.uniform1f(gpu_addresses.light_texture_size, material.lightDepthTextureSize);
+        context.uniform1i(gpu_addresses.light_depth_texture, 1);
+        if (material.draw_shadow) {
+            material.light_depth_texture.activate(context, 1);
+        }
+    }
+
+    shared_glsl_code() {
+        return `precision mediump float;
+        
+                varying vec4 worldPos;
+                uniform float time;
+                uniform float layer;
+                
+                uniform sampler2D texture;
+                varying vec2 f_tex_coord;
+                
+                float random (vec2 value){
+                    return fract(sin(dot(value, vec2(94.8365, 47.053))) * 94762.9342);
+                }
+
+                float lerp(float a, float b, float percent){
+                    return (1.0 - percent) * a + (percent * b);
+                }
+
+                float perlinNoise (vec2 value){
+                   vec2 integer = floor(value);
+                   vec2 fractional = fract(value);
+                   fractional = fractional * fractional * (3.0 - 2.0 * fractional);
+
+                   value = abs(fract(value) - 0.5);
+                   float currCell = random(integer + vec2(0.0, 0.0));
+                   float rightCell = random(integer + vec2(1.0, 0.0));
+                   float bottomCell = random(integer + vec2(0.0, 1.0));
+                   float bottomRightCell = random(integer + vec2(1.0, 1.0));
+
+                   float currRow = lerp(currCell, rightCell, fractional.x);
+                   float lowerRow = lerp(bottomCell, bottomRightCell, fractional.x);
+                   float lerpedRandomVal = lerp(currRow, lowerRow, fractional.y);
+                   return lerpedRandomVal;
+                }
+
+                float PerlinNoise3Pass(vec2 value, float Scale){
+                    float outVal = 0.0;
+
+                    float frequency = pow(2.0, 0.0);
+                    float amplitude = pow(0.5, 3.0);
+                    outVal += perlinNoise(vec2(value.x * Scale / frequency, value.y * Scale / frequency)) * amplitude;
+
+                    frequency = pow(2.0, 1.0);
+                    amplitude = pow(0.5, 2.0);
+                    outVal += perlinNoise(vec2(value.x * Scale / frequency, value.y * Scale / frequency)) * amplitude;
+
+                    frequency = pow(2.0, 2.0);
+                    amplitude = pow(0.5, 1.0);
+                    outVal += perlinNoise(vec2(value.x * Scale / frequency, value.y * Scale / frequency)) * amplitude;
+
+                    return outVal;
+                }
+                
+                const int N_LIGHTS = ` + this.num_lights + `;
+                uniform float ambient, diffusivity, specularity, smoothness;
+                uniform vec4 light_positions_or_vectors[N_LIGHTS], light_colors[N_LIGHTS];
+                uniform float light_attenuation_factors[N_LIGHTS];
+                uniform vec3 squared_scale, camera_center;
+                uniform vec4 ground_color;
+                uniform vec4 grass_color;
+        
+                varying vec3 N, vertex_worldspace;
+                vec3 phong_model_lights( vec3 N, vec3 vertex_worldspace, 
+                        out vec3 light_diffuse_contribution, out vec3 light_specular_contribution ){                                        
+                    // phong_model_lights():  Add up the lights' contributions.
+                    vec3 E = normalize( camera_center - vertex_worldspace );
+                    vec3 result = vec3( 0.0 );
+                    light_diffuse_contribution = vec3( 0.0 );
+                    light_specular_contribution = vec3( 0.0 );
+                    for(int i = 0; i < N_LIGHTS; i++){
+                        // Lights store homogeneous coords - either a position or vector.  If w is 0, the 
+                        // light will appear directional (uniform direction from all points), and we 
+                        // simply obtain a vector towards the light by directly using the stored value.
+                        // Otherwise if w is 1 it will appear as a point light -- compute the vector to 
+                        // the point light's location from the current surface point.  In either case, 
+                        // fade (attenuate) the light as the vector needed to reach it gets longer.  
+                        vec3 surface_to_light_vector = light_positions_or_vectors[i].xyz - 
+                                                       light_positions_or_vectors[i].w * vertex_worldspace;                                             
+                        float distance_to_light = length( surface_to_light_vector );
+        
+                        vec3 L = normalize( surface_to_light_vector );
+                        vec3 H = normalize( L + E );
+                        // Compute the diffuse and specular components from the Phong
+                        // Reflection Model, using Blinn's "halfway vector" method:
+                        float diffuse  =      max( dot( N, L ), 0.0 );
+                        float specular = pow( max( dot( N, H ), 0.0 ), smoothness );
+                        float attenuation = 1.0 / (1.0 + light_attenuation_factors[i] * distance_to_light * distance_to_light );
+                        
+                        vec3 light_contribution = grass_color.xyz * light_colors[i].xyz * diffusivity * diffuse
+                                                                  + light_colors[i].xyz * specularity * specular;
+                        light_diffuse_contribution += attenuation * grass_color.xyz * light_colors[i].xyz * diffusivity * diffuse;
+                        light_specular_contribution += attenuation * grass_color.xyz * specularity * specular;
+                        result += attenuation * light_contribution;
+                      }
+                    return result;
+                  }
+        
+            `;
+    }
+
+    vertex_glsl_code() {
+        return this.shared_glsl_code() + `
+                attribute vec3 position;
+                attribute vec2 texture_coord;  
+                attribute vec3 normal;                       
+                uniform mat4 projection_camera_model_transform;
+                uniform mat4 model_transform;
+                
+                void main(){
+                    worldPos = model_transform * vec4(position, 1.0);
+                    float alpha = (layer / 10.0) * PerlinNoise3Pass(worldPos.xz + vec2(time * 2.0, time * 2.0), 2.0);
+                    gl_Position = projection_camera_model_transform * vec4(position.x + (0.2 * alpha), position.y + (0.04 * layer), position.z + (0.2 * alpha), 1.0);
+                    f_tex_coord = texture_coord;
+                    N = normalize( mat3( model_transform ) * normal / squared_scale);
+                    vertex_worldspace = (model_transform * vec4( position, 1.0 )).xyz;
+                }`;
+    }
+
+    fragment_glsl_code() {
+        return this.shared_glsl_code() + `
+                uniform sampler2D light_depth_texture;
+                uniform float light_texture_size;
+                uniform mat4 light_view_mat;
+                uniform mat4 light_proj_mat;
+                uniform float light_depth_bias;
+                uniform bool draw_shadow;
+                uniform bool fake_shadow_layer;
+                
+                float PCF_shadow(vec2 center, float projected_depth) {
+                    float shadow = 0.0;
+                    float texel_size = 1.0 / light_texture_size;
+                    for(int x = -1; x <= 1; ++x)
+                    {
+                        for(int y = -1; y <= 1; ++y)
+                        {
+                            float light_depth_value = texture2D(light_depth_texture, center + vec2(x, y) * texel_size).r; 
+                            shadow += (projected_depth >= light_depth_value + light_depth_bias) ? 0.8 : 0.0;        
+                        }    
+                    }
+                    shadow /= 9.0;
+                    return shadow;
+                }
+        
+                void main(){
+                    if (fake_shadow_layer){
+                        float perlin = 1.0 - (1.0 - PerlinNoise3Pass(vec2(worldPos.x + 0.03, worldPos.z - 0.03), 50.0)) * 2.2;
+                        float white = 1.0 - (1.0 - perlinNoise(vec2(worldPos.x + 0.03, worldPos.z - 0.03))) * 40.0;
+                        float alpha = perlin * white - ((layer + 0.2) * 1.8 / 1.0);
+                        if (alpha < 0.0 || worldPos.y < -0.7){
+                            discard;
+                        }
+                        gl_FragColor = vec4(grass_color.x * ambient * 1.3 + (layer / 200.0), grass_color.y * ambient * 1.3 + (layer / 200.0), grass_color.z * ambient * 1.3 + (layer / 200.0), 1.0);
+                        vec4 tex_color = texture2D(texture, f_tex_coord);
+                        if (tex_color.r > 0.0){
+                            discard;
+                        }
+                    }
+                    else {
+                    if (layer > 0.0){
+                        gl_FragColor = vec4(grass_color.x * ambient + (layer / 70.0), grass_color.y * ambient + (layer / 70.0), grass_color.z * ambient + (layer / 70.0), 1.0);
+                    }
+                    else {
+                        gl_FragColor = vec4(ground_color.x * ambient, ground_color.y * ambient, ground_color.z * ambient, 1.0);
+                    }
+                    vec3 diffuse, specular;
+                    vec3 other_than_ambient = phong_model_lights( normalize( N ), vertex_worldspace, diffuse, specular );
+                    
+                    if (draw_shadow) {
+                        vec4 light_tex_coord = (light_proj_mat * light_view_mat * vec4(vertex_worldspace, 1.0));
+                        light_tex_coord.xyz /= light_tex_coord.w; 
+                        light_tex_coord.xyz *= 0.5;
+                        light_tex_coord.xyz += 0.5;
+                        float light_depth_value = texture2D( light_depth_texture, light_tex_coord.xy ).r;
+                        float projected_depth = light_tex_coord.z;
+                        
+                        bool inRange =
+                            light_tex_coord.x >= 0.0 &&
+                            light_tex_coord.x <= 1.0 &&
+                            light_tex_coord.y >= 0.0 &&
+                            light_tex_coord.y <= 1.0;
+                              
+                        float shadowness = PCF_shadow(light_tex_coord.xy, projected_depth);
+                        
+                        if (inRange && shadowness > 0.3) {
+                            diffuse *= 0.2 + 0.8 * (1.0 - shadowness);
+                            specular *= 1.0 - shadowness;
+                        }
+                    }
+                    
+                    gl_FragColor.xyz += diffuse + specular;
+                    
+                    if (layer > 0.0){
+                        float perlin = 1.0 - (1.0 - PerlinNoise3Pass(worldPos.xz, 50.0)) * 2.2;
+                        float white = 1.0 - (1.0 - perlinNoise(worldPos.xz)) * 40.0;
+                        float alpha = perlin * white - ((layer + 0.2) * 1.2 / 1.0);
+                        if (alpha < 0.0 || worldPos.y < -0.7){
+                            discard;
+                        }
+                        vec4 tex_color = texture2D(texture, f_tex_coord);
+                        if (tex_color.r > 0.0){
+                            discard;
+                        }
+                    }
+                    }
+                }`;
+    }
+}
+
 //similar to the shader above, but doesn't draw the plane in the center area and doesn't have the checks for height or occlusion tex.
 //Also, it has a easing function alpha fading far from the world origin for a fog effect.
 class Grass_Shader_Background extends Shader {
@@ -381,7 +690,8 @@ class Grass_Shader_Background extends Shader {
     update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
         const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform], PCM = P.times(C).times(M);
         context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
-        context.uniform4fv(gpu_addresses.color, material.color);
+        context.uniform4fv(gpu_addresses.ground_color, material.ground_color);
+        context.uniform4fv(gpu_addresses.grass_color, material.grass_color);
         context.uniform1f(gpu_addresses.time, graphics_state.animation_time / 1000.0);
         context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform.transposed()));
         context.uniform1f(gpu_addresses.layer, this.layer);
@@ -466,7 +776,8 @@ class Grass_Shader_Background extends Shader {
                 uniform vec4 light_positions_or_vectors[N_LIGHTS], light_colors[N_LIGHTS];
                 uniform float light_attenuation_factors[N_LIGHTS];
                 uniform vec3 squared_scale, camera_center;
-                uniform vec4 color;
+                uniform vec4 ground_color;
+                uniform vec4 grass_color;
         
                 varying vec3 N, vertex_worldspace;
                 vec3 phong_model_lights( vec3 N, vec3 vertex_worldspace ){                                        
@@ -484,7 +795,7 @@ class Grass_Shader_Background extends Shader {
                         float specular = pow( max( dot( N, H ), 0.0 ), smoothness );
                         float attenuation = 1.0 / (1.0 + light_attenuation_factors[i] * distance_to_light * distance_to_light);
                         
-                        vec3 light_contribution = color.xyz * light_colors[i].xyz * diffusivity * diffuse
+                        vec3 light_contribution = grass_color.xyz * light_colors[i].xyz * diffusivity * diffuse
                                                                   + light_colors[i].xyz * specularity * specular;
                         result += attenuation * light_contribution;
                       }
@@ -513,10 +824,15 @@ class Grass_Shader_Background extends Shader {
     fragment_glsl_code() {
         return this.shared_glsl_code() + `
                 void main(){
-                    gl_FragColor = vec4(color.x * ambient + (layer / 70.0), color.y * ambient + (layer / 70.0), color.z * ambient + (layer / 70.0), 1.0 - exp(-0.5 * (40.0 - distance(vec4(0,0,0,0), worldPos))));
+                    if (layer > 0.0){
+                        gl_FragColor = vec4(grass_color.x * ambient + (layer / 70.0), grass_color.y * ambient + (layer / 70.0), grass_color.z * ambient + (layer / 70.0), 1.0 - exp(-0.5 * (40.0 - distance(vec4(0,0,0,0), worldPos))));
+                    }
+                    else {
+                        gl_FragColor = vec4(ground_color.x * ambient, ground_color.y * ambient, ground_color.z * ambient, 1.0 - exp(-0.5 * (40.0 - distance(vec4(0,0,0,0), worldPos))));
+                    }
                     gl_FragColor.xyz += phong_model_lights( normalize( N ), vertex_worldspace);
                     
-                    if ((worldPos.x < 14.0 && worldPos.x > -11.5) && (worldPos.z < 14.0 && worldPos.z > -11.5)){
+                    if ((worldPos.x < 13.5 && worldPos.x > -11.5) && (worldPos.z < 13.5 && worldPos.z > -11.5)){
                         discard;
                     }
                     if (layer > 0.0){
@@ -526,6 +842,271 @@ class Grass_Shader_Background extends Shader {
                         if (alpha < 0.0){
                             discard;
                         }
+                    }
+                }`;
+    }
+}
+
+class Grass_Shader_Shadow_Background extends Shader {
+    constructor(layer, num_lights = 2) {
+        super();
+        this.layer = layer;
+        this.num_lights = num_lights;
+    }
+
+    update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
+        const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform], PCM = P.times(C).times(M);
+        context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
+        context.uniform4fv(gpu_addresses.ground_color, material.ground_color);
+        context.uniform4fv(gpu_addresses.grass_color, material.grass_color);
+
+        context.uniform1f(gpu_addresses.time, graphics_state.animation_time / 1000.0);
+        context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform.transposed()));
+        context.uniform1f(gpu_addresses.layer, this.layer);
+        context.uniform1i(gpu_addresses.texture, 0);
+        material.texture.activate(context);
+        context.uniform1i(gpu_addresses.fake_shadow_layer, material.fake_shadow_layer);
+        context.uniform1f(gpu_addresses.ambient, material.ambient);
+        context.uniform1f(gpu_addresses.diffusivity, material.diffusivity);
+        context.uniform1f(gpu_addresses.specularity, material.specularity);
+        context.uniform1f(gpu_addresses.smoothness, material.smoothness);
+        const O = vec4(0, 0, 0, 1), camera_center = graphics_state.camera_transform.times(O).to3();
+        context.uniform3fv(gpu_addresses.camera_center, camera_center);
+        const squared_scale = model_transform.reduce(
+            (acc, r) => {
+                return acc.plus(vec4(...r).times_pairwise(r))
+            }, vec4(0, 0, 0, 0)).to3();
+        context.uniform3fv(gpu_addresses.squared_scale, squared_scale);
+
+        if (!graphics_state.lights.length)
+            return;
+
+        const light_positions_flattened = [], light_colors_flattened = [];
+        for (let i = 0; i < 4 * graphics_state.lights.length; i++) {
+            light_positions_flattened.push(graphics_state.lights[Math.floor(i / 4)].position[i % 4]);
+            light_colors_flattened.push(graphics_state.lights[Math.floor(i / 4)].color[i % 4]);
+        }
+        context.uniform4fv(gpu_addresses.light_positions_or_vectors, light_positions_flattened);
+        context.uniform4fv(gpu_addresses.light_colors, light_colors_flattened);
+        context.uniform1fv(gpu_addresses.light_attenuation_factors, graphics_state.lights.map(l => l.attenuation));
+
+        context.uniformMatrix4fv(gpu_addresses.light_view_mat, false, Matrix.flatten_2D_to_1D(material.light_view_mat.transposed()));
+        context.uniformMatrix4fv(gpu_addresses.light_proj_mat, false, Matrix.flatten_2D_to_1D(material.light_proj_mat.transposed()));
+        context.uniform1i(gpu_addresses.draw_shadow, material.draw_shadow);
+        context.uniform1f(gpu_addresses.light_depth_bias, 0.003);
+        context.uniform1f(gpu_addresses.light_texture_size, material.lightDepthTextureSize);
+        context.uniform1i(gpu_addresses.light_depth_texture, 1);
+        if (material.draw_shadow) {
+            material.light_depth_texture.activate(context, 1);
+        }
+    }
+
+    shared_glsl_code() {
+        return `precision mediump float;
+        
+                varying vec4 worldPos;
+                uniform float time;
+                uniform float layer;
+                
+                uniform sampler2D texture;
+                varying vec2 f_tex_coord;
+                
+                float random (vec2 value){
+                    return fract(sin(dot(value, vec2(94.8365, 47.053))) * 94762.9342);
+                }
+
+                float lerp(float a, float b, float percent){
+                    return (1.0 - percent) * a + (percent * b);
+                }
+
+                float perlinNoise (vec2 value){
+                   vec2 integer = floor(value);
+                   vec2 fractional = fract(value);
+                   fractional = fractional * fractional * (3.0 - 2.0 * fractional);
+
+                   value = abs(fract(value) - 0.5);
+                   float currCell = random(integer + vec2(0.0, 0.0));
+                   float rightCell = random(integer + vec2(1.0, 0.0));
+                   float bottomCell = random(integer + vec2(0.0, 1.0));
+                   float bottomRightCell = random(integer + vec2(1.0, 1.0));
+
+                   float currRow = lerp(currCell, rightCell, fractional.x);
+                   float lowerRow = lerp(bottomCell, bottomRightCell, fractional.x);
+                   float lerpedRandomVal = lerp(currRow, lowerRow, fractional.y);
+                   return lerpedRandomVal;
+                }
+
+                float PerlinNoise3Pass(vec2 value, float Scale){
+                    float outVal = 0.0;
+
+                    float frequency = pow(2.0, 0.0);
+                    float amplitude = pow(0.5, 3.0);
+                    outVal += perlinNoise(vec2(value.x * Scale / frequency, value.y * Scale / frequency)) * amplitude;
+
+                    frequency = pow(2.0, 1.0);
+                    amplitude = pow(0.5, 2.0);
+                    outVal += perlinNoise(vec2(value.x * Scale / frequency, value.y * Scale / frequency)) * amplitude;
+
+                    frequency = pow(2.0, 2.0);
+                    amplitude = pow(0.5, 1.0);
+                    outVal += perlinNoise(vec2(value.x * Scale / frequency, value.y * Scale / frequency)) * amplitude;
+
+                    return outVal;
+                }
+                
+                const int N_LIGHTS = ` + this.num_lights + `;
+                uniform float ambient, diffusivity, specularity, smoothness;
+                uniform vec4 light_positions_or_vectors[N_LIGHTS], light_colors[N_LIGHTS];
+                uniform float light_attenuation_factors[N_LIGHTS];
+                uniform vec3 squared_scale, camera_center;
+                uniform vec4 ground_color;
+                uniform vec4 grass_color;
+        
+                varying vec3 N, vertex_worldspace;
+                vec3 phong_model_lights( vec3 N, vec3 vertex_worldspace, 
+                        out vec3 light_diffuse_contribution, out vec3 light_specular_contribution ){                                        
+                    // phong_model_lights():  Add up the lights' contributions.
+                    vec3 E = normalize( camera_center - vertex_worldspace );
+                    vec3 result = vec3( 0.0 );
+                    light_diffuse_contribution = vec3( 0.0 );
+                    light_specular_contribution = vec3( 0.0 );
+                    for(int i = 0; i < N_LIGHTS; i++){
+                        // Lights store homogeneous coords - either a position or vector.  If w is 0, the 
+                        // light will appear directional (uniform direction from all points), and we 
+                        // simply obtain a vector towards the light by directly using the stored value.
+                        // Otherwise if w is 1 it will appear as a point light -- compute the vector to 
+                        // the point light's location from the current surface point.  In either case, 
+                        // fade (attenuate) the light as the vector needed to reach it gets longer.  
+                        vec3 surface_to_light_vector = light_positions_or_vectors[i].xyz - 
+                                                       light_positions_or_vectors[i].w * vertex_worldspace;                                             
+                        float distance_to_light = length( surface_to_light_vector );
+        
+                        vec3 L = normalize( surface_to_light_vector );
+                        vec3 H = normalize( L + E );
+                        // Compute the diffuse and specular components from the Phong
+                        // Reflection Model, using Blinn's "halfway vector" method:
+                        float diffuse  =      max( dot( N, L ), 0.0 );
+                        float specular = pow( max( dot( N, H ), 0.0 ), smoothness );
+                        float attenuation = 1.0 / (1.0 + light_attenuation_factors[i] * distance_to_light * distance_to_light );
+                        
+                        vec3 light_contribution = grass_color.xyz * light_colors[i].xyz * diffusivity * diffuse
+                                                                  + light_colors[i].xyz * specularity * specular;
+                        light_diffuse_contribution += attenuation * grass_color.xyz * light_colors[i].xyz * diffusivity * diffuse;
+                        light_specular_contribution += attenuation * grass_color.xyz * specularity * specular;
+                        result += attenuation * light_contribution;
+                      }
+                    return result;
+                  }
+        
+            `;
+    }
+
+    vertex_glsl_code() {
+        return this.shared_glsl_code() + `
+                attribute vec3 position;
+                attribute vec2 texture_coord;  
+                attribute vec3 normal;                       
+                uniform mat4 projection_camera_model_transform;
+                uniform mat4 model_transform;
+                
+                void main(){
+                    worldPos = model_transform * vec4(position, 1.0);
+                    float alpha = (layer / 10.0) * PerlinNoise3Pass(worldPos.xz + random(worldPos.xz) + vec2(time * 1.0, time * 1.0), 2.0) - 1.0;
+                    gl_Position = projection_camera_model_transform * vec4(position.x + (0.02 * alpha), position.y + (0.04 * layer), position.z + (0.02 * alpha), 1.0);
+                    f_tex_coord = texture_coord;
+                    N = normalize( mat3( model_transform ) * normal / squared_scale);
+                    vertex_worldspace = (model_transform * vec4( position, 1.0 )).xyz;
+                }`;
+    }
+
+    fragment_glsl_code() {
+        return this.shared_glsl_code() + `
+                uniform sampler2D light_depth_texture;
+                uniform float light_texture_size;
+                uniform mat4 light_view_mat;
+                uniform mat4 light_proj_mat;
+                uniform float light_depth_bias;
+                uniform bool draw_shadow;
+                uniform bool fake_shadow_layer;
+                
+                float PCF_shadow(vec2 center, float projected_depth) {
+                    float shadow = 0.0;
+                    float texel_size = 1.0 / light_texture_size;
+                    for(int x = -1; x <= 1; ++x)
+                    {
+                        for(int y = -1; y <= 1; ++y)
+                        {
+                            float light_depth_value = texture2D(light_depth_texture, center + vec2(x, y) * texel_size).r; 
+                            shadow += (projected_depth >= light_depth_value + light_depth_bias) ? 0.8 : 0.0;        
+                        }    
+                    }
+                    shadow /= 9.0;
+                    return shadow;
+                }
+        
+                void main(){
+                    if ((worldPos.x < 14.0 && worldPos.x > -11.5) && (worldPos.z < 14.0 && worldPos.z > -11.5)){
+                        discard;
+                    }
+                    if (fake_shadow_layer){
+                        float perlin = 1.0 - (1.0 - PerlinNoise3Pass(vec2(worldPos.x + 0.03, worldPos.z - 0.03), 50.0)) * 2.2;
+                        float white = 1.0 - (1.0 - perlinNoise(vec2(worldPos.x + 0.03, worldPos.z - 0.03))) * 40.0;
+                        float alpha = perlin * white - ((layer + 0.2) * 1.8 / 1.0);
+                        if (alpha < 0.0 || worldPos.y < -0.7){
+                            discard;
+                        }
+                        gl_FragColor = vec4(grass_color.x * ambient * 1.3 + (layer / 200.0), grass_color.y * ambient * 1.3 + (layer / 200.0), grass_color.z * ambient * 1.3 + (layer / 200.0), 1.0);
+                        vec4 tex_color = texture2D(texture, f_tex_coord);
+                        if (tex_color.r > 0.0){
+                            discard;
+                        }
+                    }
+                    else {
+                    if (layer > 0.0){
+                        gl_FragColor = vec4(grass_color.x * ambient + (layer / 70.0), grass_color.y * ambient + (layer / 70.0), grass_color.z * ambient + (layer / 70.0), 1.0);
+                    }
+                    else {
+                        gl_FragColor = vec4(ground_color.x * ambient, ground_color.y * ambient, ground_color.z * ambient, 1.0);
+                    }
+                    vec3 diffuse, specular;
+                    vec3 other_than_ambient = phong_model_lights( normalize( N ), vertex_worldspace, diffuse, specular );
+                    
+                    if (draw_shadow) {
+                        vec4 light_tex_coord = (light_proj_mat * light_view_mat * vec4(vertex_worldspace, 1.0));
+                        light_tex_coord.xyz /= light_tex_coord.w; 
+                        light_tex_coord.xyz *= 0.5;
+                        light_tex_coord.xyz += 0.5;
+                        float light_depth_value = texture2D( light_depth_texture, light_tex_coord.xy ).r;
+                        float projected_depth = light_tex_coord.z;
+                        
+                        bool inRange =
+                            light_tex_coord.x >= 0.0 &&
+                            light_tex_coord.x <= 1.0 &&
+                            light_tex_coord.y >= 0.0 &&
+                            light_tex_coord.y <= 1.0;
+                              
+                        float shadowness = PCF_shadow(light_tex_coord.xy, projected_depth);
+                        
+                        if (inRange && shadowness > 0.3) {
+                            diffuse *= 0.2 + 0.8 * (1.0 - shadowness);
+                            specular *= 1.0 - shadowness;
+                        }
+                    }
+                    
+                    gl_FragColor.xyz += diffuse + specular;
+                    
+                    if (layer > 0.0){
+                        float perlin = 1.0 - (1.0 - PerlinNoise3Pass(worldPos.xz, 50.0)) * 2.2;
+                        float white = 1.0 - (1.0 - perlinNoise(worldPos.xz)) * 40.0;
+                        float alpha = perlin * white - ((layer + 0.2) * 1.2 / 1.0);
+                        if (alpha < 0.0 || worldPos.y < -0.7){
+                            discard;
+                        }
+                        vec4 tex_color = texture2D(texture, f_tex_coord);
+                        if (tex_color.r > 0.0){
+                            discard;
+                        }
+                    }
                     }
                 }`;
     }
@@ -969,6 +1550,46 @@ class Custom_Movement_Controls extends defs.Movement_Controls{
     }
 }
 
+class Buffered_Texture extends tiny.Graphics_Card_Object {
+    // **Texture** wraps a pointer to a new texture image where
+    // it is stored in GPU memory, along with a new HTML image object.
+    // This class initially copies the image to the GPU buffers,
+    // optionally generating mip maps of it and storing them there too.
+    constructor(texture_buffer_pointer) {
+        super();
+        Object.assign(this, {texture_buffer_pointer});
+        this.ready = true;
+        this.texture_buffer_pointer = texture_buffer_pointer;
+    }
+
+    copy_onto_graphics_card(context, need_initial_settings = true) {
+        // copy_onto_graphics_card():  Called automatically as needed to load the
+        // texture image onto one of your GPU contexts for its first time.
+
+        // Define what this object should store in each new WebGL Context:
+        const initial_gpu_representation = {texture_buffer_pointer: undefined};
+        // Our object might need to register to multiple GPU contexts in the case of
+        // multiple drawing areas.  If this is a new GPU context for this object,
+        // copy the object to the GPU.  Otherwise, this object already has been
+        // copied over, so get a pointer to the existing instance.
+        const gpu_instance = super.copy_onto_graphics_card(context, initial_gpu_representation);
+
+        if (!gpu_instance.texture_buffer_pointer) gpu_instance.texture_buffer_pointer = this.texture_buffer_pointer;
+        return gpu_instance;
+    }
+
+    activate(context, texture_unit = 0) {
+        // activate(): Selects this Texture in GPU memory so the next shape draws using it.
+        // Optionally select a texture unit in case you're using a shader with many samplers.
+        // Terminate draw requests until the image file is actually loaded over the network:
+        if (!this.ready)
+            return;
+        const gpu_instance = super.activate(context);
+        context.activeTexture(context["TEXTURE" + texture_unit]);
+        context.bindTexture(context.TEXTURE_2D, this.texture_buffer_pointer);
+    }
+}
+
 class Scene_Object{
     constructor(shape, transform, material, renderArgs = "TRIANGLES") {
         this.shape = shape;
@@ -979,6 +1600,10 @@ class Scene_Object{
 
     drawObject(context, program_state){
         this.shape.draw(context, program_state, this.transform, this.material, this.renderArgs);
+    }
+
+    drawOverrideMaterial(context, program_state, overrideMat){
+        this.shape.draw(context, program_state, this.transform, overrideMat, this.renderArgs);
     }
 }
 
@@ -995,6 +1620,7 @@ class Base_Scene extends Scene {
 
         this.materials = {
             plastic: new Material(new defs.Phong_Shader(), {ambient: .4, diffusivity: .6, color: hex_color("#ffffff")}),
+            plain: new Material(new PlainShader()),
         };
 
         //member variables to track our interaction state
@@ -1002,9 +1628,21 @@ class Base_Scene extends Scene {
         this.isLowering = false;
         this.isOccluding = false;
 
+        this.lightDepthTextureSize = 2048;
+        this.light_position = vec4(15, 8, -15, 0);
+        this.light_color = color(5,5,5,0);
+        this.light_view_target = vec4(0, 0, 0, 1);
+        this.light_field_of_view = 130 * Math.PI / 180;
+        this.light_view_mat = Mat4.look_at(
+            vec3(this.light_position[0], this.light_position[1], this.light_position[2]),
+            vec3(this.light_view_target[0], this.light_view_target[1], this.light_view_target[2]),
+            vec3(0, 1, 0), // assume the light to target will have a up dir of +y, maybe need to change according to your case
+        );
+        this.light_proj_mat = Mat4.perspective(this.light_field_of_view, 1, 0.5, 500);
+
         //create the background grass plane. low density since we aren't deforming it
         this.background_grass_plane = new Scene_Object(new Triangle_Strip_Plane(20, 20, Vector3.create(0,0,0), 2),
-            Mat4.scale(20,1,20), new Material(new Grass_Shader_Background(0), {color: hex_color("#38af18"),
+            Mat4.scale(5,1,5), new Material(new Grass_Shader_Background(0), {grass_color: hex_color("#38af18"), ground_color: hex_color("#544101"),
                 ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100}), "TRIANGLE_STRIP");
 
         this.water_plane = new Scene_Object(new Triangle_Strip_Plane(5,5, Vector3.create(0,0,0), 5), Mat4.translation(-10,-0.7,-10).times(Mat4.scale(10,1,10)),
@@ -1012,24 +1650,24 @@ class Base_Scene extends Scene {
 
         //the main grass plane has a higher density since we want the deformation to look smooth
         this.grass_plane = new Scene_Object(new Triangle_Strip_Plane(26, 26, Vector3.create(0,0,0), 7),
-            Mat4.translation(0,0,0), new Material(new Grass_Shader(0), {color: hex_color("#38af18"),
-                texture: this.grassOcclusionTexture, ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100}), "TRIANGLE_STRIP");
+            Mat4.translation(0,0,0), new Material(new Grass_Shader_Shadow(0), {grass_color: hex_color("#38af18"), ground_color: hex_color("#544101"),
+                texture: this.grassOcclusionTexture, ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100, fake_shadow_layer: false,
+                light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat}), "TRIANGLE_STRIP");
 
         //the skybox is just a sphere with the shader that makes the color look vaguely like sky above. We put everything inside this sphere
         this.skybox = new Scene_Object(new defs.Subdivision_Sphere(4), Mat4.scale(40, 40,40),
             new Material(new Skybox_Shader(), {top_color: hex_color("#268b9a"), mid_color: hex_color("#d1eaf6"), bottom_color: hex_color("#3d8f2b")}));
+
+        this.init_ok = false;
     }
 
     display(context, program_state) {
         if (!context.scratchpad.controls) {
             this.children.push(context.scratchpad.controls = new Custom_Movement_Controls());
-            program_state.set_camera(Mat4.look_at(vec3(7, 12, 23), vec3(1, 0, 0), vec3(0, 1, 0)))
+            program_state.set_camera(Mat4.look_at(vec3(7, 12, 23), vec3(1, 0, 0), vec3(0, 1, 0)));
+            program_state.projection_transform = Mat4.perspective(Math.PI / 4, context.width / context.height, 1, 500);
         }
-        program_state.projection_transform = Mat4.perspective(
-            Math.PI/4 , context.width / context.height, 1, 100);
-
-        //im not sure why they have the light get remade every frame, same with the projection transform. Gonna ask the TA about it
-        program_state.lights = [new Light(vec4(30, 15, -20, 0), color(2, 2, 2, 0), 10000)];
+        program_state.lights = [new Light(this.light_position, this.light_color, 10000)];
     }
 }
 
@@ -1054,6 +1692,66 @@ export class Test extends Base_Scene {
             this.isLowering = false;
             this.isOccluding = true;
         });
+    }
+
+    texture_buffer_init(gl) {
+        this.lightDepthTextureGPU = gl.createTexture();
+        this.lightDepthTexture = new Buffered_Texture(this.lightDepthTextureGPU);
+
+        gl.bindTexture(gl.TEXTURE_2D, this.lightDepthTextureGPU);
+        gl.texImage2D(
+            gl.TEXTURE_2D,      // target
+            0,                  // mip level
+            gl.DEPTH_COMPONENT, // internal format
+            this.lightDepthTextureSize,   // width
+            this.lightDepthTextureSize,   // height
+            0,                  // border
+            gl.DEPTH_COMPONENT, // format
+            gl.UNSIGNED_INT,    // type
+            null);              // data
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+        // Depth Texture Buffer
+        this.lightDepthFramebuffer = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.lightDepthFramebuffer);
+        gl.framebufferTexture2D(
+            gl.FRAMEBUFFER,       // target
+            gl.DEPTH_ATTACHMENT,  // attachment point
+            gl.TEXTURE_2D,        // texture target
+            this.lightDepthTextureGPU,         // texture
+            0);                   // mip level
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+        // create a color texture of the same size as the depth texture
+        // see article why this is needed_
+        this.unusedTexture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.unusedTexture);
+        gl.texImage2D(
+            gl.TEXTURE_2D,
+            0,
+            gl.RGBA,
+            this.lightDepthTextureSize,
+            this.lightDepthTextureSize,
+            0,
+            gl.RGBA,
+            gl.UNSIGNED_BYTE,
+            null,
+        );
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        // attach it to the framebuffer
+        gl.framebufferTexture2D(
+            gl.FRAMEBUFFER,        // target
+            gl.COLOR_ATTACHMENT0,  // attachment point
+            gl.TEXTURE_2D,         // texture target
+            this.unusedTexture,         // texture
+            0);                    // mip level
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
 
     //helper function to get the location of the closest vertex on our plane to where the mouse is pointing, can care about or disregard yAxis position of the plane
@@ -1118,7 +1816,7 @@ export class Test extends Base_Scene {
 
         //attenuate strength based on brush radius so that large brushes don't raise terrain much faster than small brushes
         let strength = 0.05 / Math.max((brushRadius - 6), 1);
-        for (let i = 0; i < brushRadius; i++) {
+        for (let i = 5; i < brushRadius; i++) {
             for (let dy = 0; dy < i; dy++) {
                 let dx = 0;
                 let sq = (i * i) - (dy * dy);
@@ -1141,7 +1839,7 @@ export class Test extends Base_Scene {
         let planeLoc = Vector.create(Math.ceil(planeLocPercent[0] * (plane.shape.length * plane.shape.density / 2)) + (plane.shape.length * plane.shape.density / 2),
             Math.ceil(planeLocPercent[1] * (plane.shape.width * plane.shape.density / 2)) + (plane.shape.width * plane.shape.density / 2));
         let strength = 0.05 / Math.max((brushRadius - 6), 1);
-        for (let i = 0; i < brushRadius; i++) {
+        for (let i = 5; i < brushRadius; i++) {
             for (let dy = 0; dy < i; dy++) {
                 let dx = 0;
                 let sq = (i * i) - (dy * dy);
@@ -1156,8 +1854,72 @@ export class Test extends Base_Scene {
         }
     }
 
+    setFrameBufferForShadows(context, program_state) {
+        context.context.bindFramebuffer(context.context.FRAMEBUFFER, this.lightDepthFramebuffer);
+        context.context.viewport(0, 0, this.lightDepthTextureSize, this.lightDepthTextureSize);
+        context.context.clear(context.context.COLOR_BUFFER_BIT | context.context.DEPTH_BUFFER_BIT);
+        program_state.projection_transform = this.light_proj_mat;
+        program_state.camera_inverse = this.light_view_mat;
+    }
+
+    resetFrameBuffer(context, program_state, projTransformStorage, cameraStorage) {
+        context.context.bindFramebuffer(context.context.FRAMEBUFFER, null);
+        context.context.viewport(0, 0, context.context.canvas.width, context.context.canvas.height);
+        program_state.projection_transform = projTransformStorage;
+        program_state.camera_inverse = cameraStorage;
+    }
+
+    render_scene(context, program_state, depthPass) {
+        const t = program_state.animation_time;
+
+        if(depthPass === false) {
+            this.skybox.drawObject(context, program_state);
+            this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plastic);
+
+            //with the way the grass shader works, you need to draw it a number of times, each time specifying which level of the grass you want to draw
+            //for the background 8-12 layers look good
+            for (let i = 0; i < 12; i++) {
+                this.background_grass_plane.material.shader.layer = i;
+                this.background_grass_plane.drawObject(context, program_state);
+            }
+
+            //16 layers looks good for the main grass portion. can increase or decrease later if we want
+            this.grass_plane.material.light_depth_texture = this.lightDepthTexture;
+            this.grass_plane.material.draw_shadow = true;
+            for (let i = 0; i < 16; i++) {
+                this.grass_plane.material.shader.layer = i;
+                this.grass_plane.drawObject(context, program_state);
+                //this.grass_plane.material.fake_shadow_layer = true;
+                //this.grass_plane.drawObject(context, program_state);
+                //this.grass_plane.material.fake_shadow_layer = false;
+            }
+
+            this.water_plane.drawObject(context, program_state);
+        }
+        else{
+            this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plain);
+            this.background_grass_plane.drawOverrideMaterial(context, program_state, this.materials.plain);
+            //this.grass_plane.drawOverrideMaterial(context, program_state, this.materials.plain);
+            this.grass_plane.material.draw_shadow = false;
+            for (let i = 0; i < 32; i++) {
+                this.grass_plane.material.shader.layer = i;
+                this.grass_plane.drawObject(context, program_state);
+            }
+        }
+    }
+
     display(context, program_state) {
         super.display(context, program_state);
+
+        if (!this.init_ok) {
+            const ext = context.context.getExtension('WEBGL_depth_texture');
+            if (!ext) {
+                return alert('need WEBGL_depth_texture');  // eslint-disable-line
+            }
+            this.texture_buffer_init(context.context);
+
+            this.init_ok = true;
+        }
 
         //if the mouse is held down and we are trying to paint on the canvas
         if (context.scratchpad.controls.mouse.isPainting) {
@@ -1188,22 +1950,13 @@ export class Test extends Base_Scene {
         }
         this.grassOcclusionTexture.copy_onto_graphics_card(context.context, false);
 
-        this.skybox.drawObject(context, program_state);
-        this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plastic);
+        let projTransformStorage = program_state.projection_transform;
+        let cameraStorage = program_state.camera_inverse;
 
-        //with the way the grass shader works, you need to draw it a number of times, each time specifying which level of the grass you want to draw
-        //for the background 8-12 layers look good
-        for (let i = 0; i < 12; i++) {
-            this.background_grass_plane.material.shader.layer = i;
-            this.background_grass_plane.drawObject(context, program_state);
-        }
+        this.setFrameBufferForShadows(context, program_state);
+        this.render_scene(context, program_state, true);
 
-        //16 layers looks good for the main grass portion. can increase or decrease later if we want
-        for (let i = 0; i < 16; i++) {
-            this.grass_plane.material.shader.layer = i;
-            this.grass_plane.drawObject(context, program_state);
-        }
-
-        this.water_plane.drawObject(context, program_state);
+        this.resetFrameBuffer(context, program_state, projTransformStorage, cameraStorage);
+        this.render_scene(context, program_state, false);
     }
 }
