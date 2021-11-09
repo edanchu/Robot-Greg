@@ -27,18 +27,20 @@ export class Team_Project extends Scene {
     texture_buffer_init(gl) {
         this.lightDepthTextureGPU = gl.createTexture();
         this.lightDepthTexture = new Buffered_Texture(this.lightDepthTextureGPU);
+        this.cameraDepthTextureGPU = gl.createTexture();
+        this.cameraDepthTexture = new Buffered_Texture(this.cameraDepthTextureGPU);
+
+        gl.bindTexture(gl.TEXTURE_2D, this.cameraDepthTextureGPU);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT, 1920, 1080,
+            0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
         gl.bindTexture(gl.TEXTURE_2D, this.lightDepthTextureGPU);
-        gl.texImage2D(
-            gl.TEXTURE_2D,      // target
-            0,                  // mip level
-            gl.DEPTH_COMPONENT, // internal format
-            this.lightDepthTextureSize,   // width
-            this.lightDepthTextureSize,   // height
-            0,                  // border
-            gl.DEPTH_COMPONENT, // format
-            gl.UNSIGNED_INT,    // type
-            null);              // data
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT, this.lightDepthTextureSize, this.lightDepthTextureSize,
+            0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -47,41 +49,27 @@ export class Team_Project extends Scene {
         // Depth Texture Buffer
         this.lightDepthFramebuffer = gl.createFramebuffer();
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.lightDepthFramebuffer);
-        gl.framebufferTexture2D(
-            gl.FRAMEBUFFER,       // target
-            gl.DEPTH_ATTACHMENT,  // attachment point
-            gl.TEXTURE_2D,        // texture target
-            this.lightDepthTextureGPU,         // texture
-            0);                   // mip level
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, this.lightDepthTextureGPU, 0);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+        this.cameraDepthFramebuffer = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.cameraDepthFramebuffer);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, this.cameraDepthTextureGPU, 0);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
         // create a color texture of the same size as the depth texture
         // see article why this is needed_
-        this.unusedTexture = gl.createTexture();
-        gl.bindTexture(gl.TEXTURE_2D, this.unusedTexture);
-        gl.texImage2D(
-            gl.TEXTURE_2D,
-            0,
-            gl.RGBA,
-            this.lightDepthTextureSize,
-            this.lightDepthTextureSize,
-            0,
-            gl.RGBA,
-            gl.UNSIGNED_BYTE,
-            null,
-        );
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        // attach it to the framebuffer
-        gl.framebufferTexture2D(
-            gl.FRAMEBUFFER,        // target
-            gl.COLOR_ATTACHMENT0,  // attachment point
-            gl.TEXTURE_2D,         // texture target
-            this.unusedTexture,         // texture
-            0);                    // mip level
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        // this.unusedTexture = gl.createTexture();
+        // gl.bindTexture(gl.TEXTURE_2D, this.unusedTexture);
+        // gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.lightDepthTextureSize, this.lightDepthTextureSize,
+        //     0, gl.RGBA, gl.UNSIGNED_BYTE, null,);
+        // gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        // gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        // gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        // gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        // // attach it to the framebuffer
+        // gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.unusedTexture, 0);
+        // gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
 
     //helper function to get the location of the closest vertex on our plane to where the mouse is pointing, can care about or disregard yAxis position of the plane
@@ -194,11 +182,18 @@ export class Team_Project extends Scene {
         program_state.camera_inverse = this.light_view_mat;
     }
 
-    resetFrameBuffer(context, program_state, projTransformStorage, cameraStorage) {
-        context.context.bindFramebuffer(context.context.FRAMEBUFFER, null);
-        context.context.viewport(0, 0, context.context.canvas.width, context.context.canvas.height);
+    setFrameBufferForDepthPass(context, program_state, projTransformStorage, cameraStorage){
+        context.context.bindFramebuffer(context.context.FRAMEBUFFER, this.cameraDepthFramebuffer);
+        context.context.viewport(0, 0, 1920, 1080);
+        context.context.clear(context.context.COLOR_BUFFER_BIT | context.context.DEPTH_BUFFER_BIT);
         program_state.projection_transform = projTransformStorage;
         program_state.camera_inverse = cameraStorage;
+    }
+
+
+    resetFrameBuffer(context, program_state) {
+        context.context.bindFramebuffer(context.context.FRAMEBUFFER, null);
+        context.context.viewport(0, 0, context.context.canvas.width, context.context.canvas.height);
     }
 
     constructor() {
@@ -221,9 +216,13 @@ export class Team_Project extends Scene {
         this.isLowering = false;
         this.isOccluding = false;
 
+        //grass vars
+        this.grass_color = hex_color("#2d8f06");
+        this.ground_color = hex_color("#556208");
+
         //variables to deal with light and shadows
         this.lightDepthTextureSize = 2048;
-        this.light_position = vec4(15, 8, -15, 0);
+        this.light_position = vec4(18, 12, -18, 0);
         this.light_color = color(5,5,5,0);
         this.light_view_target = vec4(0, 0, 0, 1);
         this.light_field_of_view = 130 * Math.PI / 180;
@@ -236,15 +235,16 @@ export class Team_Project extends Scene {
 
         //create the background grass plane. low density since we aren't deforming it
         this.background_grass_plane = new Scene_Object(new Triangle_Strip_Plane(20, 20, Vector3.create(0,0,0), 2),
-            Mat4.scale(5,1,5), new Material(new Grass_Shader_Background(0), {grass_color: hex_color("#2d8f06"), ground_color: hex_color("#988504"),
+            Mat4.scale(5,1,5), new Material(new Grass_Shader_Background(0), {grass_color: this.grass_color, ground_color: this.ground_color,
                 ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100, fake_shadow_layer: false}), "TRIANGLE_STRIP");
 
         this.water_plane = new Scene_Object(new Triangle_Strip_Plane(5,5, Vector3.create(0,0,0), 5), Mat4.translation(-10,-0.7,-10).times(Mat4.scale(10,1,10)),
-            new Material(new Phong_Water_Shader(), {color: hex_color("#4e6ef6"), ambient: 0.2, diffusivity: 0.7, specularity: 0.7, smoothness: 100}), "TRIANGLE_STRIP");
+            new Material(new Phong_Water_Shader(), {color: hex_color("#002eff"), ambient: 0.2, diffusivity: 0.7, specularity: 1.7, smoothness: 100,
+            depth_texture: null}), "TRIANGLE_STRIP");
 
         //the main grass plane has a higher density since we want the deformation to look smooth
         this.grass_plane = new Scene_Object(new Triangle_Strip_Plane(26, 26, Vector3.create(0,0,0), 7),
-            Mat4.translation(0,0,0), new Material(new Grass_Shader_Shadow(0), {grass_color: hex_color("#2d8f06"), ground_color: hex_color("#988504"),
+            Mat4.translation(0,0,0), new Material(new Grass_Shader_Shadow(0), {grass_color: this.grass_color, ground_color: this.ground_color,
                 texture: this.grassOcclusionTexture, ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100, fake_shadow_layer: false,
                 light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat}), "TRIANGLE_STRIP");
 
@@ -263,7 +263,7 @@ export class Team_Project extends Scene {
 
     }
 
-    render_scene(context, program_state, depthPass) {
+    render_scene(context, program_state, depthPass, drawGrassDepth = false, drawBackgroundGrass = true) {
         const t = program_state.animation_time;
 
         if(depthPass === false) {
@@ -292,17 +292,24 @@ export class Team_Project extends Scene {
                 this.grass_plane.drawObject(context, program_state);
                 this.grass_plane.material.fake_shadow_layer = false;
             }
-
+            this.water_plane.material.depth_texture = this.cameraDepthTexture;
             this.water_plane.drawObject(context, program_state);
+
         }
         else{
             this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plain);
-            this.background_grass_plane.drawOverrideMaterial(context, program_state, this.materials.plain);
-            //this.grass_plane.drawOverrideMaterial(context, program_state, this.materials.plain);
-            this.grass_plane.material.draw_shadow = false;
-            for (let i = 0; i < 32; i+= 4) {
-                this.grass_plane.material.shader.layer = i;
-                this.grass_plane.drawObject(context, program_state);
+            if (drawGrassDepth){
+                this.grass_plane.material.draw_shadow = false;
+                for (let i = 0; i < 32; i+= 4) {
+                    this.grass_plane.material.shader.layer = i;
+                    this.grass_plane.drawObject(context, program_state);
+                }
+            }
+            else {
+                this.grass_plane.drawOverrideMaterial(context, program_state, this.materials.plain);
+            }
+            if (drawBackgroundGrass){
+                this.background_grass_plane.drawOverrideMaterial(context, program_state, this.materials.plain);
             }
         }
     }
@@ -355,9 +362,12 @@ export class Team_Project extends Scene {
         let cameraStorage = program_state.camera_inverse;
 
         this.setFrameBufferForShadows(context, program_state);
-        this.render_scene(context, program_state, true);
+        this.render_scene(context, program_state, true, true);
 
-        this.resetFrameBuffer(context, program_state, projTransformStorage, cameraStorage);
+        this.setFrameBufferForDepthPass(context, program_state, projTransformStorage, cameraStorage);
+        this.render_scene(context, program_state, true, true, false);
+
+        this.resetFrameBuffer(context, program_state);
         this.render_scene(context, program_state, false);
     }
 }
