@@ -257,29 +257,7 @@ export class Custom_Movement_Controls extends defs.Movement_Controls{
         //}, "#8B8885");
         //this.new_line();
 
-        this.key_triggered_button("Look at origin from front", ["1"], () => {
-            this.inverse().set(Mat4.look_at(vec3(0, 0, 10), vec3(0, 0, 0), vec3(0, 1, 0)));
-            this.matrix().set(Mat4.inverse(this.inverse()));
-        }, "#8B8885");
-        this.new_line();
-        this.key_triggered_button("from right", ["2"], () => {
-            this.inverse().set(Mat4.look_at(vec3(10, 0, 0), vec3(0, 0, 0), vec3(0, 1, 0)));
-            this.matrix().set(Mat4.inverse(this.inverse()));
-        }, "#8B8885");
-        this.key_triggered_button("from rear", ["3"], () => {
-            this.inverse().set(Mat4.look_at(vec3(0, 0, -10), vec3(0, 0, 0), vec3(0, 1, 0)));
-            this.matrix().set(Mat4.inverse(this.inverse()));
-        }, "#8B8885");
-        this.key_triggered_button("from left", ["4"], () => {
-            this.inverse().set(Mat4.look_at(vec3(-10, 0, 0), vec3(0, 0, 0), vec3(0, 1, 0)));
-            this.matrix().set(Mat4.inverse(this.inverse()));
-        }, "#8B8885");
-        this.new_line();
-        this.key_triggered_button("Attach to global camera", ["Shift", "R"],
-            () => {
-                this.will_take_over_graphics_state = true
-            }, "#8B8885");
-        this.new_line();
+        
     }
 }
 
