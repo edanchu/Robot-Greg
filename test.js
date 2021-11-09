@@ -1,7 +1,7 @@
 import {Shape_From_File} from './examples/obj-file-demo.js';
 import {defs, tiny} from './examples/common.js';
 import {Skybox_Shader, PlainShader, Grass_Shader_Shadow, Grass_Shader_Background, Phong_Water_Shader, Grass_Shader_Shadow_Textured} from './shaders.js';
-import {Triangle_Strip_Plane, Dynamic_Texture, Custom_Movement_Controls, Buffered_Texture, Scene_Object} from './utils.js';
+import {Triangle_Strip_Plane, Dynamic_Texture, Custom_Movement_Controls, Buffered_Texture, Scene_Object, Maze_Solver} from './utils.js';
 const {
     Vector, Vector3, vec, vec3, vec4, color, hex_color, Matrix, Mat4, Light, Shape, Material, Scene, Shader, Graphics_Card_Object, Texture
 } = tiny;
@@ -14,6 +14,7 @@ export class Team_Project extends Scene {
             this.isOccluding = false;
             this.placeRock = false;
             this.placeTree = false;
+            this.solveMaze = false;
         });
         this.key_triggered_button("lower terrain", ["l"], () => {
             this.isRaising = false;
@@ -21,6 +22,7 @@ export class Team_Project extends Scene {
             this.isOccluding = false;
             this.placeRock = false;
             this.placeTree = false;
+            this.solveMaze = false;
         });
         this.key_triggered_button("occlude grass", ["o"], () => {
             this.isRaising = false;
@@ -28,6 +30,7 @@ export class Team_Project extends Scene {
             this.isOccluding = true;
             this.placeRock = false;
             this.placeTree = false;
+            this.solveMaze = false;
         });
         this.key_triggered_button("place rock", ["1"], () => {
             this.isRaising = false;
@@ -35,6 +38,7 @@ export class Team_Project extends Scene {
             this.isOccluding = false;
             this.placeRock = true;
             this.placeTree = false;
+            this.solveMaze = false;
         });
         this.key_triggered_button("place tree", ["2"], () => {
             this.isRaising = false;
@@ -42,6 +46,15 @@ export class Team_Project extends Scene {
             this.isOccluding = false;
             this.placeRock = false;
             this.placeTree = true;
+            this.solveMaze = false;
+        });
+        this.key_triggered_button("Solve Maze", ["3"], () => {
+            this.isRaising = false;
+            this.isLowering = false;
+            this.isOccluding = false;
+            this.placeRock = false;
+            this.placeTree = false;
+            this.solveMaze = true;
         });
     }
 
@@ -219,10 +232,9 @@ export class Team_Project extends Scene {
 
     constructor() {
         super();
-
         //creates a blank custom texture for the grass occlusion
         this.grassOcclusionTexture = new Dynamic_Texture(256, 256);
-
+        this.Maze_Solver = new Maze_Solver();
         this.shapes = {
             'axis' : new defs.Axis_Arrows(),
             "tree": new Shape_From_File("assets/palm_tree.obj"),
@@ -242,7 +254,7 @@ export class Team_Project extends Scene {
         this.isOccluding = false;
         this.placeRock = false;
         this.placeTree = false;
-
+        this.solveMaze = false;
         //grass vars
         this.grass_color = hex_color("#2d8f06");
         this.ground_color = hex_color("#556208");
@@ -274,6 +286,18 @@ export class Team_Project extends Scene {
             Mat4.translation(0,0,0), new Material(new Grass_Shader_Shadow(0), {grass_color: this.grass_color, ground_color: this.ground_color,
                 texture: this.grassOcclusionTexture, ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100, fake_shadow_layer: false,
                 light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat}), "TRIANGLE_STRIP");
+        this.pathArr = [];
+        this.obstacleArr = [];
+        for (let i = 0; i < 26*7; i++){
+            for(let j = 0; j < 26*7; j++){
+                if (j === 0){
+                    this.obstacleArr.push([]);
+                }
+                //if y > 1 push 0
+                //else push 1
+                this.obstacleArr[i].push(1);
+            }
+        }
 
         // this.noiseTexture1 = new Texture('assets/Blue.png');
         // this.noiseTexture2 = new Texture('assets/Perlin2.png');
@@ -392,11 +416,17 @@ export class Team_Project extends Scene {
                 let dest = this.getClosestLocOnPlane(this.grass_plane, context, program_state, true);
                 this.shapesArray.push(new Scene_Object(this.shapes.tree, Mat4.translation(dest[0], 3 + dest[1], dest[2]), this.materials.plastic));
             }
-
-
             else if (this.placeRock === true) {
                 let dest = this.getClosestLocOnPlane(this.grass_plane, context, program_state, true);
                 this.shapesArray.push(new Scene_Object(this.shapes.rock, Mat4.translation(dest[0], dest[1], dest[2]).times(Mat4.scale(1/3, 1/3, 1/3)), this.materials.plastic));
+            }
+            else if(this.solveMaze === true){
+                this.pathArr = this.Maze_Solver.solveMaze(this.obstacleArr,this.obstacleArr.length,26,26,7);
+                for(let i = 0; i < this.pathArr.length; i++)
+                {
+                    this.shapesArray.push(new Scene_Object(this.shapes.tree, Mat4.translation(this.pathArr[i][0], 3 + this.pathArr[i][1] , this.pathArr[i][2]), this.materials.plastic));
+                }
+                this.solveMaze = false;
             }
 
             

@@ -317,3 +317,79 @@ export class Scene_Object{
         this.shape.draw(context, program_state, this.transform, overrideMat, this.renderArgs);
     }
 }
+
+export class Maze_Solver {
+
+    printSolution(sol, N, density) {
+        let arr = [];
+        for (let i = 0; i < N; i++) {
+            for (let j = 0; j < N; j++)
+                if (sol[i][j] === 1)
+                    arr.push([i / density - 13, 0, j / density - 13]);
+        }
+        return arr;
+    }
+
+
+    inBounds(maze, N, x, y) {
+        // if (x, y outside maze) return false
+        return (x >= 0 && x < N && y >= 0 && y < N );
+    }
+
+    solveMaze(maze, N, len, wid, density) {
+        let sol = new Array(N);
+        for (let i = 0; i < N; i++) {
+            sol[i] = new Array(N);
+            for (let j = 0; j < N; j++) {
+                sol[i][j] = 0;
+            }
+        }
+
+        if (this.solveMazeUtil(maze, 0, 0, sol, N) === false) {
+            document.write("Solution doesn't exist");
+            return false;
+        }
+
+        return this.printSolution(sol, N, density);
+    }
+
+    solveMazeUtil(maze, x, y, sol, N) {
+        // if (x, y is goal) return true
+        if (x === N - 1 && y === N - 1
+            && maze[x][y] === 1) {
+            sol[x][y] = 1;
+            return true;
+        }
+
+
+        if (this.inBounds(maze,N, x, y) === true) {
+
+            if (sol[x][y] === 1)
+                return false;
+
+            sol[x][y] = 1;
+
+            if (this.solveMazeUtil(maze, x + 1, y, sol, N))
+                return true;
+
+
+            if (this.solveMazeUtil(maze, x, y + 1, sol, N))
+                return true;
+
+
+            if (this.solveMazeUtil(maze, x - 1, y, sol, N))
+                return true;
+
+            if (this.solveMazeUtil(maze, x, y - 1, sol, N))
+                return true;
+
+            sol[x][y] = 0;
+            return false;
+        }
+
+        return false;
+    }
+
+
+}
+
