@@ -1,3 +1,4 @@
+import {Shape_From_File} from './examples/obj-file-demo.js';
 import {defs, tiny} from './examples/common.js';
 import {Skybox_Shader, PlainShader, Grass_Shader_Shadow, Grass_Shader_Background, Phong_Water_Shader, Grass_Shader_Shadow_Textured} from './shaders.js';
 import {Triangle_Strip_Plane, Dynamic_Texture, Custom_Movement_Controls, Buffered_Texture, Scene_Object} from './utils.js';
@@ -11,16 +12,36 @@ export class Team_Project extends Scene {
             this.isRaising = true;
             this.isLowering = false;
             this.isOccluding = false;
+            this.placeRock = false;
+            this.placeTree = false;
         });
         this.key_triggered_button("lower terrain", ["l"], () => {
             this.isRaising = false;
             this.isLowering = true;
             this.isOccluding = false;
+            this.placeRock = false;
+            this.placeTree = false;
         });
         this.key_triggered_button("occlude grass", ["o"], () => {
             this.isRaising = false;
             this.isLowering = false;
             this.isOccluding = true;
+            this.placeRock = false;
+            this.placeTree = false;
+        });
+        this.key_triggered_button("place rock", ["1"], () => {
+            this.isRaising = false;
+            this.isLowering = false;
+            this.isOccluding = false;
+            this.placeRock = true;
+            this.placeTree = false;
+        });
+        this.key_triggered_button("place tree", ["2"], () => {
+            this.isRaising = false;
+            this.isLowering = false;
+            this.isOccluding = false;
+            this.placeRock = false;
+            this.placeTree = true;
         });
     }
 
@@ -203,8 +224,12 @@ export class Team_Project extends Scene {
         this.grassOcclusionTexture = new Dynamic_Texture(256, 256);
 
         this.shapes = {
-            'axis' : new defs.Axis_Arrows()
+            'axis' : new defs.Axis_Arrows(),
+            "tree": new Shape_From_File("assets/palm_tree.obj"),
+            "rock": new Shape_From_File("assets/rock01.obj"),
         };
+
+        this.shapesArray = [];
 
         this.materials = {
             plastic: new Material(new defs.Phong_Shader(), {ambient: .4, diffusivity: .6, color: hex_color("#ffffff")}),
@@ -215,6 +240,8 @@ export class Team_Project extends Scene {
         this.isRaising = true;
         this.isLowering = false;
         this.isOccluding = false;
+        this.placeRock = false;
+        this.placeTree = false;
 
         //grass vars
         this.grass_color = hex_color("#2d8f06");
@@ -270,27 +297,34 @@ export class Team_Project extends Scene {
             this.skybox.drawObject(context, program_state);
             this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plastic);
 
+
+
             //with the way the grass shader works, you need to draw it a number of times, each time specifying which level of the grass you want to draw
             //for the background 8-12 layers look good
-            for (let i = 0; i < 16; i+= 2) {
+            for (let i = 0; i < 8; i++ ) {
                 this.background_grass_plane.material.shader.layer = i;
                 this.background_grass_plane.drawObject(context, program_state);
-                if (i % 4 !== 0) {
+                /*if (i % 4 !== 0) {
                     this.background_grass_plane.material.fake_shadow_layer = true;
                     this.background_grass_plane.drawObject(context, program_state);
                     this.background_grass_plane.material.fake_shadow_layer = false;
-                }
+                }*/
+            }
+
+            for (let i = 0; i < this.shapesArray.length; i++)
+            {
+                this.shapesArray[i].drawObject(context, program_state);
             }
 
             //16 layers looks good for the main grass portion. can increase or decrease later if we want
             this.grass_plane.material.light_depth_texture = this.lightDepthTexture;
             this.grass_plane.material.draw_shadow = true;
-            for (let i = 0; i < 18; i++) {
+            for (let i = 0; i < 18; i+= 2) {
                 this.grass_plane.material.shader.layer = i;
                 this.grass_plane.drawObject(context, program_state);
-                this.grass_plane.material.fake_shadow_layer = true;
-                this.grass_plane.drawObject(context, program_state);
-                this.grass_plane.material.fake_shadow_layer = false;
+                //this.grass_plane.material.fake_shadow_layer = true;
+                //this.grass_plane.drawObject(context, program_state);
+                //this.grass_plane.material.fake_shadow_layer = false;
             }
             this.water_plane.material.depth_texture = this.cameraDepthTexture;
             this.water_plane.drawObject(context, program_state);
@@ -310,6 +344,11 @@ export class Team_Project extends Scene {
             }
             if (drawBackgroundGrass){
                 this.background_grass_plane.drawOverrideMaterial(context, program_state, this.materials.plain);
+            }
+
+            for (let i = 0; i < this.shapesArray.length; i++)
+            {
+                this.shapesArray[i].drawObject(context, program_state);
             }
         }
     }
@@ -348,6 +387,19 @@ export class Team_Project extends Scene {
                 let dest = this.getClosestLocOnPlane(this.grass_plane, context, program_state, true);
                 this.drawnOnTexture(this.grassOcclusionTexture, this.grass_plane.shape.length, this.grass_plane.shape.width, dest, 13);
             }
+
+            else if (this.placeTree === true) {
+                let dest = this.getClosestLocOnPlane(this.grass_plane, context, program_state, true);
+                this.shapesArray.push(new Scene_Object(this.shapes.tree, Mat4.translation(dest[0], 3 + dest[1], dest[2]), this.materials.plastic));
+            }
+
+
+            else if (this.placeRock === true) {
+                let dest = this.getClosestLocOnPlane(this.grass_plane, context, program_state, true);
+                this.shapesArray.push(new Scene_Object(this.shapes.rock, Mat4.translation(dest[0], dest[1], dest[2]).times(Mat4.scale(1/3, 1/3, 1/3)), this.materials.plastic));
+            }
+
+            
         }
 
         //to make the grass slowly come back after painted away, just subtract from the red value of the texture every frame
@@ -362,10 +414,10 @@ export class Team_Project extends Scene {
         let cameraStorage = program_state.camera_inverse;
 
         this.setFrameBufferForShadows(context, program_state);
-        this.render_scene(context, program_state, true, true);
+        this.render_scene(context, program_state, true, false);
 
         this.setFrameBufferForDepthPass(context, program_state, projTransformStorage, cameraStorage);
-        this.render_scene(context, program_state, true, true, false);
+        this.render_scene(context, program_state, true, false, false);
 
         this.resetFrameBuffer(context, program_state);
         this.render_scene(context, program_state, false);
