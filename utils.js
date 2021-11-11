@@ -392,3 +392,183 @@ export class Maze_Solver {
 
 
 }
+
+export class Shape_From_File extends Shape {                                   // **Shape_From_File** is a versatile standalone Shape that imports
+                                                                               // all its arrays' data from an .obj 3D model file.
+    constructor(filename) {
+        super("position", "normal", "texture_coord", "tangent");
+        // Begin downloading the mesh. Once that completes, return
+        // control to our parse_into_mesh function.
+        this.load_file(filename);
+    }
+    
+    load_file(filename) {                             // Request the external file and wait for it to load.
+        // Failure mode:  Loads an empty shape.
+        return fetch(filename)
+            .then(response => {
+                if (response.ok) return Promise.resolve(response.text())
+                else return Promise.reject(response.status)
+            })
+            .then(obj_file_contents => this.parse_into_mesh(obj_file_contents))
+            .catch(error => {
+                this.copy_onto_graphics_card(this.gl);
+            })
+    }
+    
+    parse_into_mesh(data) {                           // Adapted from the "webgl-obj-loader.js" library found online:
+        var verts = [], vertNormals = [], textures = [], unpacked = {};
+    
+        unpacked.verts = [];
+        unpacked.norms = [];
+        unpacked.textures = [];
+        unpacked.hashindices = {};
+        unpacked.indices = [];
+        unpacked.index = 0;
+    
+        var lines = data.split('\n');
+    
+        var VERTEX_RE = /^v\s/;
+        var NORMAL_RE = /^vn\s/;
+        var TEXTURE_RE = /^vt\s/;
+        var FACE_RE = /^f\s/;
+        var WHITESPACE_RE = /\s+/;
+    
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i].trim();
+            var elements = line.split(WHITESPACE_RE);
+            elements.shift();
+        
+            if (VERTEX_RE.test(line)) verts.push.apply(verts, elements);
+            else if (NORMAL_RE.test(line)) vertNormals.push.apply(vertNormals, elements);
+            else if (TEXTURE_RE.test(line)) textures.push.apply(textures, elements);
+            else if (FACE_RE.test(line)) {
+                var quad = false;
+                for (var j = 0, eleLen = elements.length; j < eleLen; j++) {
+                    if (j === 3 && !quad) {
+                        j = 2;
+                        quad = true;
+                    }
+                    if (elements[j] in unpacked.hashindices)
+                        unpacked.indices.push(unpacked.hashindices[elements[j]]);
+                    else {
+                        var vertex = elements[j].split('/');
+                    
+                        unpacked.verts.push(+verts[(vertex[0] - 1) * 3 + 0]);
+                        unpacked.verts.push(+verts[(vertex[0] - 1) * 3 + 1]);
+                        unpacked.verts.push(+verts[(vertex[0] - 1) * 3 + 2]);
+                    
+                        if (textures.length) {
+                            unpacked.textures.push(+textures[((vertex[1] - 1) || vertex[0]) * 2 + 0]);
+                            unpacked.textures.push(+textures[((vertex[1] - 1) || vertex[0]) * 2 + 1]);
+                        }
+                    
+                        unpacked.norms.push(+vertNormals[((vertex[2] - 1) || vertex[0]) * 3 + 0]);
+                        unpacked.norms.push(+vertNormals[((vertex[2] - 1) || vertex[0]) * 3 + 1]);
+                        unpacked.norms.push(+vertNormals[((vertex[2] - 1) || vertex[0]) * 3 + 2]);
+                    
+                        unpacked.hashindices[elements[j]] = unpacked.index;
+                        unpacked.indices.push(unpacked.index);
+                        unpacked.index += 1;
+                    }
+                    if (j === 3 && quad) unpacked.indices.push(unpacked.hashindices[elements[0]]);
+                }
+            }
+        }
+        {
+            const {verts, norms, textures} = unpacked;
+            for (var j = 0; j < verts.length / 3; j++) {
+                this.arrays.position.push(vec3(verts[3 * j], verts[3 * j + 1], verts[3 * j + 2]));
+                this.arrays.normal.push(vec3(norms[3 * j], norms[3 * j + 1], norms[3 * j + 2]));
+                this.arrays.texture_coord.push(vec(textures[2 * j], textures[2 * j + 1]));
+            }
+            this.indices = unpacked.indices;
+        }
+
+        let tangents = [];
+        let bitangents = [];
+
+        let triCount = this.indices.length;
+        for(let i = 0; i< triCount; i+=3){
+            let i0 = this.indices[i];
+            let i1 = this.indices[i+1];
+            let i2 = this.indices[i+2];
+
+            let pos0 = this.arrays.position[i0];
+            let pos1 = this.arrays.position[i1];
+            let pos2 = this.arrays.position[i2];
+
+            let tex0 = this.arrays.texture_coord[i0];
+            let tex1 = this.arrays.texture_coord[i1];
+            let tex2 = this.arrays.texture_coord[i2];
+
+            let edge1 = pos1.minus(pos0);
+            let edge2 = pos2.minus(pos0);
+
+            let uv1 = tex1.minus(tex0);
+            let uv2 = tex2.minus(tex0);
+
+            let r = 1.0 / ((uv1[0] * uv2[1]) - (uv1[1] * uv2[0]));
+            if (r === Infinity)
+                r = 0;
+            
+            let tangent = Vector3.create((((edge1[0] * uv2[1]) - (edge2[0] * uv1[1]))* r),
+                (((edge1[1] * uv2[1]) - (edge2[1] * uv1[1]))* r),
+                (((edge1[2] * uv2[1]) - (edge2[2] * uv1[1]))* r));
+
+            let bitangent = Vector3.create((((edge1[0] * uv2[0]) - (edge2[0] * uv1[0]))* r),
+                (((edge1[1] * uv2[0]) - (edge2[1] * uv1[0]))* r),
+                (((edge1[2] * uv2[0]) - (edge2[2] * uv1[0]))* r));
+            
+            if (tangents[i0] == null)
+                tangents[i0] = tangent;
+            else
+                tangents[i0] = tangents[i0].plus(tangent);
+            
+            if (tangents[i1] == null)
+                tangents[i1] = tangent;
+            else
+                tangents[i1] = tangents[i1].plus(tangent);
+            
+            if (tangents[i2] == null)
+                tangents[i2] = tangent;
+            else
+                tangents[i2] = tangents[i2].plus(tangent);
+    
+            
+            if (bitangents[i0] == null)
+                bitangents[i0] = bitangent;
+            else
+                bitangents[i0] = bitangents[i0].plus(bitangent);
+            
+            if (bitangents[i1] == null)
+                bitangents[i1] = bitangent;
+            else
+                bitangents[i1] = bitangents[i1].plus(bitangent);
+            
+            if (bitangents[i2] == null)
+                bitangents[i2] = bitangent;
+            else
+                bitangents[i2] = bitangents[i2].plus(bitangent);
+        }
+
+        for (let i = 0; i < this.arrays.position.length; i++){
+            let n = this.arrays.normal[i];
+            let t0 = tangents[i];
+            let t1 = bitangents[i];
+            let tangent = t0.minus(n.times(n.dot(t0))).normalized();
+            let cross = n.cross(t0);
+            let w = cross.dot(t1) < 0 ? -1.0:1.0;
+            this.arrays.tangent.push(tangent);
+        }
+        
+        
+        this.normalize_positions(false);
+        this.ready = true;
+    }
+    
+    draw(context, program_state, model_transform, material) {               // draw(): Same as always for shapes, but cancel all
+        // attempts to draw the shape before it loads:
+        if (this.ready)
+            super.draw(context, program_state, model_transform, material);
+    }
+}

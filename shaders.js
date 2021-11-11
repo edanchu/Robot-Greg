@@ -1372,7 +1372,8 @@ export class Phong_Water_Shader extends Shader{
         context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
         context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform.transposed()));
         context.uniform1f(gpu_addresses.time, graphics_state.animation_time / 1000);
-        context.uniform4fv(gpu_addresses.shape_color, material.color);
+        context.uniform4fv(gpu_addresses.shallow_color, material.shallow_color);
+        context.uniform4fv(gpu_addresses.deep_color, material.deep_color);
         context.uniform1f(gpu_addresses.ambient, material.ambient);
         context.uniform1f(gpu_addresses.diffusivity, material.diffusivity);
         context.uniform1f(gpu_addresses.specularity, material.specularity);
@@ -1400,6 +1401,8 @@ export class Phong_Water_Shader extends Shader{
         context.uniform1i(gpu_addresses.depth_texture, 1);
         material.depth_texture.activate(context, 1);
 
+        //context.uniform1i(gpu_addresses.bg_color_texture, 3);
+        //material.bg_color_texture.activate(context, 3);
     }
 
     shared_glsl_code() {
@@ -1411,7 +1414,8 @@ export class Phong_Water_Shader extends Shader{
                 uniform vec4 light_positions_or_vectors[N_LIGHTS], light_colors[N_LIGHTS];
                 uniform float light_attenuation_factors[N_LIGHTS];
                 uniform vec3 squared_scale, camera_center;
-                uniform vec4 shape_color;
+                uniform vec4 shallow_color;
+                uniform vec4 deep_color;
         
                 varying vec3 N, vertex_worldspace;
                 vec3 phong_model_lights( vec3 N, vec3 vertex_worldspace ){                                        
@@ -1429,7 +1433,7 @@ export class Phong_Water_Shader extends Shader{
                         float specular = pow( max( dot( N, H ), 0.0 ), smoothness );
                         float attenuation = 1.0 / (1.0 + light_attenuation_factors[i] * distance_to_light * distance_to_light);
                         
-                        vec3 light_contribution = shape_color.xyz * light_colors[i].xyz * diffusivity * diffuse
+                        vec3 light_contribution = shallow_color.xyz * light_colors[i].xyz * diffusivity * diffuse
                                                                   + light_colors[i].xyz * specularity * specular;
                         result += attenuation * light_contribution;
                       }
@@ -1456,6 +1460,7 @@ export class Phong_Water_Shader extends Shader{
     fragment_glsl_code() {
         return this.shared_glsl_code() + `
                 uniform sampler2D depth_texture;
+                //uniform sampler2D bg_color_texture;
                 
                 float linearDepth(float val){
                     val = 2.0 * val - 1.0;
@@ -1464,9 +1469,10 @@ export class Phong_Water_Shader extends Shader{
                 
                 void main(){
                     float depthVal = texture2D(depth_texture, vec2((gl_FragCoord.x - 0.5) / 1919.0, (gl_FragCoord.y - 0.5) / 1079.0)).r;
+                    //vec4 bgColor = texture2D(bg_color_texture, vec2((gl_FragCoord.x - 0.5) / 1919.0, (gl_FragCoord.y - 0.5) / 1079.0));
                     float depthDifference = abs(linearDepth(depthVal) - linearDepth(gl_FragCoord.z));
-                    gl_FragColor = vec4(mix(shape_color.xyz, vec3(0.0,0.0,0.4), min(depthDifference, 3.0)),1.0);
-                    //gl_FragColor = vec4(shape_color.xyz, depthDifference);
+                    gl_FragColor = vec4(mix(shallow_color.xyz, deep_color.xyz, sin(min(depthDifference / 5.0, 1.0) * 3.14159 / 2.0 )), sin(min(depthDifference / 2.0, 1.0) * 3.14159 / 2.0 ));
+                    //gl_FragColor = bgColor;
                     
                     vec3 lighting = phong_model_lights( normalize( N ), vertex_worldspace);
                     gl_FragColor.xyz += lighting;
@@ -1474,7 +1480,7 @@ export class Phong_Water_Shader extends Shader{
     }
 }
 
-export class Shadow_Textured_Phong_Shader extends Shader {
+export class Shadow_Textured_Phong extends Shader {
     constructor(layer, num_lights = 2) {
         super();
         this.num_lights = num_lights;
@@ -1647,7 +1653,7 @@ export class Shadow_Textured_Phong_Shader extends Shader {
     }
 }
 
-export class Shadow_Textured_Phong_Shader_Maps extends Shader {
+export class Shadow_Textured_Phong_Maps extends Shader {
     constructor(layer, num_lights = 2) {
         super();
         this.num_lights = num_lights;
@@ -1664,6 +1670,15 @@ export class Shadow_Textured_Phong_Shader_Maps extends Shader {
 
         context.uniform1i(gpu_addresses.specular_texture, 2);
         material.color_texture.activate(context, 2);
+        
+        context.uniform1i(gpu_addresses.normal_texture, 3);
+        if (material.normal_texture != null) {
+            material.normal_texture.activate(context, 3);
+            context.uniform1i(gpu_addresses.use_normal, true);
+        }
+        else{
+            context.uniform1i(gpu_addresses.use_normal, false);
+        }
 
         context.uniform1f(gpu_addresses.ambient, material.ambient);
         context.uniform1f(gpu_addresses.diffusivity, material.diffusivity);
@@ -1708,7 +1723,11 @@ export class Shadow_Textured_Phong_Shader_Maps extends Shader {
                 uniform sampler2D color_texture;
                 varying vec2 f_tex_coord;
                 
+                varying mat3 tbn;
+                
                 uniform sampler2D specular_texture;
+                uniform sampler2D normal_texture;
+                uniform bool use_normal;
                 
                 const int N_LIGHTS = ` + this.num_lights + `;
                 uniform float ambient, diffusivity, specularity, smoothness;
@@ -1750,7 +1769,8 @@ export class Shadow_Textured_Phong_Shader_Maps extends Shader {
         return this.shared_glsl_code() + `
                 attribute vec3 position;
                 attribute vec2 texture_coord;  
-                attribute vec3 normal;                       
+                attribute vec3 normal;
+                attribute vec3 tangent;
                 uniform mat4 projection_camera_model_transform;
                 uniform mat4 model_transform;
                 
@@ -1759,6 +1779,8 @@ export class Shadow_Textured_Phong_Shader_Maps extends Shader {
                     f_tex_coord = texture_coord;
                     N = normalize( mat3( model_transform ) * normal / squared_scale);
                     vertex_worldspace = (model_transform * vec4( position, 1.0 )).xyz;
+                    vec3 BiTangent = cross(normal, tangent);
+                    tbn = mat3(normalize(vec3(model_transform * vec4(tangent, 0.0))), normalize(vec3(model_transform * vec4(BiTangent, 0.0))), normalize(vec3(model_transform * vec4(normal, 0.0))));
                 }`;
     }
 
@@ -1793,11 +1815,19 @@ export class Shadow_Textured_Phong_Shader_Maps extends Shader {
         
                 void main(){
                     vec4 color = texture2D(color_texture, f_tex_coord);
+                    vec3 normal = texture2D(normal_texture, f_tex_coord).xyz;
+                    normal = (normal * 2.0) - 1.0;
+                    normal = normalize(tbn * normal);
                     
                     gl_FragColor = vec4(color.xyz * ambient, color.w);
                     
                     vec3 diffuse, specular;
-                    vec3 other_than_ambient = phong_model_lights( normalize( N ), vertex_worldspace, f_tex_coord, specular_texture, color_texture, diffuse, specular);
+                    if (use_normal){
+                        vec3 other_than_ambient = phong_model_lights( normal, vertex_worldspace, f_tex_coord, specular_texture, color_texture, diffuse, specular);
+                    }
+                    else{
+                        vec3 other_than_ambient = phong_model_lights( normalize( N ), vertex_worldspace, f_tex_coord, specular_texture, color_texture, diffuse, specular);
+                    }
                     
                     if (draw_shadow) {
                         vec4 light_tex_coord = (light_proj_mat * light_view_mat * vec4(vertex_worldspace, 1.0));
