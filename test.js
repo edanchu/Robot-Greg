@@ -3,12 +3,12 @@ import {
     Skybox_Shader,
     PlainShader,
     Grass_Shader_Shadow,
-    Grass_Shader_Background,
-    Phong_Water_Shader,
+    Water_Shader,
     Grass_Shader_Shadow_Textured,
     Shadow_Textured_Phong, Shadow_Textured_Phong_Maps, Grass_Shader_Background_Shadow
 } from './shaders.js';
-import {Triangle_Strip_Plane, Dynamic_Texture, Custom_Movement_Controls, Buffered_Texture, Scene_Object, Maze_Solver, Shape_From_File} from './utils.js';
+import './astar.js';
+import {Triangle_Strip_Plane, Dynamic_Texture, Custom_Movement_Controls, Buffered_Texture, Scene_Object, Shape_From_File} from './utils.js';
 const {
     Vector, Vector3, vec, vec3, vec4, color, hex_color, Matrix, Mat4, Light, Shape, Material, Scene, Shader, Graphics_Card_Object, Texture
 } = tiny;
@@ -156,7 +156,7 @@ export class Team_Project extends Scene {
     //currently only draws on the red channel
     drawnOnTexture(texture, length, width, location, brushRadius) {
         //map from location on the plane, to location on the texture. Same way we do viewport and window transforms
-        let textureLocPercent = Vector.create((location[0]-1) / (width / 2), -(location[2]-1) / (length / 2));
+        let textureLocPercent = Vector.create((location[0]-1) / (width / 2), (location[2]-1) / (length / 2));
         let textureLoc = Vector.create(Math.ceil(textureLocPercent[0] * (texture.width / 2)) + (texture.width / 2), Math.ceil(textureLocPercent[1] * (texture.length / 2)) + (texture.length / 2));
 
         //use a line by line circle algorithm to draw a circle at the center with a radius of brushradius.
@@ -251,9 +251,7 @@ export class Team_Project extends Scene {
 
     constructor() {
         super();
-
-        this.Maze_Solver = new Maze_Solver();
-
+        
         //creates a blank custom texture for the grass occlusion
         this.grassOcclusionTexture = new Dynamic_Texture(256, 256);
         this.rockDiffuseTexture = new Texture("assets/stone/stone_albedo.png");
@@ -262,7 +260,8 @@ export class Team_Project extends Scene {
         this.treeDiffuseTexture = new Texture("assets/palm_tree/diffus.png");
         this.treeSpecularTexture = new Texture("assets/palm_tree/specular.png");
         this.treeNormalTexture = new Texture("assets/palm_tree/normal.png");
-
+        this.grassGroundTexture = new Texture("assets/textures/ground2.png");
+        
         this.shapes = {
             'axis' : new defs.Axis_Arrows(),
             "tree": new Shape_From_File("assets/palm_tree/palm.obj"),
@@ -304,23 +303,23 @@ export class Team_Project extends Scene {
 
             rock: new Material(new Shadow_Textured_Phong_Maps(), {color_texture: this.rockDiffuseTexture, specular_texture: this.rockSpecularTexture, normal_texture: this.rockNormalTexture, ambient: 0.4, specularity: 0.3, diffusivity: 0.3, smoothness: 1,
                 light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat}),
-            tree: new Material(new Shadow_Textured_Phong_Maps(), {color_texture: this.treeDiffuseTexture, specular_texture: this.treeSpecularTexture, normal_texture: this.treeNormalTexture, ambient: 0.4, specularity: 0.6, diffusivity: 0.45, smoothness: 5,
+            tree: new Material(new Shadow_Textured_Phong_Maps(), {color_texture: this.treeDiffuseTexture, specular_texture: this.treeSpecularTexture, normal_texture: this.treeNormalTexture, ambient: 0.4, specularity: 0.3, diffusivity: 0.45, smoothness: 5,
                 light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat}),
         };
 
         //create the background grass plane. low density since we aren't deforming it
         this.background_grass_plane = new Scene_Object(new Triangle_Strip_Plane(20, 20, Vector3.create(0,0,0), 2),
-            Mat4.scale(5,1,5), new Material(new Grass_Shader_Background_Shadow(0), {grass_color: this.grass_color, ground_color: this.ground_color,
+            Mat4.scale(5,1,5), new Material(new Grass_Shader_Background_Shadow(0), {grass_color: this.grass_color, ground_color: this.ground_color, ground_texture: this.grassGroundTexture,
                 ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100, fake_shadow_layer: false,
                 light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat}), "TRIANGLE_STRIP");
 
         this.water_plane = new Scene_Object(new Triangle_Strip_Plane(5,5, Vector3.create(0,0,0), 5), Mat4.translation(-10,-0.7,-10).times(Mat4.scale(10,1,10)),
-            new Material(new Phong_Water_Shader(), {shallow_color: hex_color("#0bc9da"), deep_color: hex_color("#213ebd"), ambient: 0.0, diffusivity: 0.0, specularity: 0.7, smoothness: 100,
+            new Material(new Water_Shader(), {shallow_color: hex_color("#0bc9da"), deep_color: hex_color("#213ebd"), ambient: 0.0, diffusivity: 0.0, specularity: 0.7, smoothness: 100,
             depth_texture: null, bg_color_texture: null}), "TRIANGLE_STRIP");
 
         //the main grass plane has a higher density since we want the deformation to look smooth
         this.grass_plane = new Scene_Object(new Triangle_Strip_Plane(26, 26, Vector3.create(0,0,0), 7),
-            Mat4.translation(0,0,0), new Material(new Grass_Shader_Shadow(0), {grass_color: this.grass_color, ground_color: this.ground_color,
+            Mat4.translation(0,0,0), new Material(new Grass_Shader_Shadow(0), {grass_color: this.grass_color, ground_color: this.ground_color, ground_texture: this.grassGroundTexture,
                 texture: this.grassOcclusionTexture, ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100, fake_shadow_layer: false,
                 light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat}), "TRIANGLE_STRIP");
 
@@ -338,15 +337,7 @@ export class Team_Project extends Scene {
             new Material(new Skybox_Shader(), {top_color: hex_color("#268b9a"), mid_color: hex_color("#d1eaf6"), bottom_color: hex_color("#3d8f2b")}));
 
         this.pathArr = [];
-        this.obstacleArr = [];
-        for (let i = 0; i < 26*7; i++){
-            for(let j = 0; j < 26*7; j++){
-                if (j === 0){
-                    this.obstacleArr.push([]);
-                }
-                this.obstacleArr[i].push(1);
-            }
-        }
+        this.obstacleArr = Array(26*7).fill(1).map(() => Array(26*7).fill(1));
     }
 
     render_scene(context, program_state, depthPass, drawGrassDepth = false, drawBackgroundGrass = true) {
@@ -470,7 +461,7 @@ export class Team_Project extends Scene {
             }
             else if (this.placeTree === true) {
                 let dest = this.getClosestLocOnPlane(this.grass_plane, context, program_state, true);
-                this.shapesArray.push(new Scene_Object(this.shapes.tree, Mat4.translation(dest[0], 6 + dest[1], dest[2]).times(Mat4.scale(1.4,1.4,1.4)), this.materials.tree));
+                this.shapesArray.push(new Scene_Object(this.shapes.tree, Mat4.translation(dest[0], 4 + dest[1], dest[2]).times(Mat4.scale(1.4,1.4,1.4)), this.materials.tree));
             }
             else if (this.placeRock === true) {
                 let dest = this.getClosestLocOnPlane(this.grass_plane, context, program_state, true);
@@ -479,10 +470,11 @@ export class Team_Project extends Scene {
 
 
             else if(this.solveMaze === true){
-                this.pathArr = this.Maze_Solver.solveMaze(this.obstacleArr,this.obstacleArr.length,26,26,7);
+                let obsArr = new Graph(this.obstacleArr);
+                this.pathArr = astar.search(obsArr,obsArr.grid[0][0],obsArr.grid[7][7], { heuristic: astar.heuristics.diagonal });
                 for(let i = 0; i < this.pathArr.length; i++)
                 {
-                    this.shapesArray.push(new Scene_Object(this.shapes.tree, Mat4.translation(this.pathArr[i][0], 3 + this.pathArr[i][1] , this.pathArr[i][2]), this.materials.plastic));
+                    this.shapesArray.push(new Scene_Object(this.shapes.tree, Mat4.translation(this.pathArr[i].x/7 - 12, 3, this.pathArr[i].y/7 - 12), this.materials.plastic));
                 }
                 this.solveMaze = false;
             }
