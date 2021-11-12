@@ -22,6 +22,7 @@ export class Team_Project extends Scene {
             this.placeTree = false;
             this.solveMaze = false;
             this.placeRobot = false;
+            this.placeGoal = false;
         });
         this.key_triggered_button("lower terrain", ["l"], () => {
             this.isRaising = false;
@@ -31,6 +32,7 @@ export class Team_Project extends Scene {
             this.placeTree = false;
             this.solveMaze = false;
             this.placeRobot = false;
+            this.placeGoal = false;
         });
         this.key_triggered_button("occlude grass", ["o"], () => {
             this.isRaising = false;
@@ -40,6 +42,7 @@ export class Team_Project extends Scene {
             this.placeTree = false;
             this.solveMaze = false;
             this.placeRobot = false;
+            this.placeGoal = false;
         });
         this.key_triggered_button("place rock", ["1"], () => {
             this.isRaising = false;
@@ -49,6 +52,7 @@ export class Team_Project extends Scene {
             this.placeTree = false;
             this.solveMaze = false;
             this.placeRobot = false;
+            this.placeGoal = false;
         });
         this.key_triggered_button("place tree", ["2"], () => {
             this.isRaising = false;
@@ -58,8 +62,9 @@ export class Team_Project extends Scene {
             this.placeTree = true;
             this.solveMaze = false;
             this.placeRobot = false;
+            this.placeGoal = false;
         });
-        this.key_triggered_button("Solve Maze", ["3"], () => {
+        this.key_triggered_button("Solve Maze", ["0"], () => {
             this.isRaising = false;
             this.isLowering = false;
             this.isOccluding = false;
@@ -67,8 +72,9 @@ export class Team_Project extends Scene {
             this.placeTree = false;
             this.solveMaze = true;
             this.placeRobot = false;
+            this.placeGoal = false;
         });
-        this.key_triggered_button("Place Robot", ["4"], () => {
+        this.key_triggered_button("Place Robot", ["3"], () => {
             this.isRaising = false;
             this.isLowering = false;
             this.isOccluding = false;
@@ -76,7 +82,20 @@ export class Team_Project extends Scene {
             this.placeTree = false;
             this.solveMaze = false;
             this.placeRobot = true;
+            this.placeGoal = false;
         })
+        this.key_triggered_button("Place Robot", ["4"], () => {
+            this.isRaising = false;
+            this.isLowering = false;
+            this.isOccluding = false;
+            this.placeRock = false;
+            this.placeTree = false;
+            this.solveMaze = false;
+            this.placeRobot = false;
+            this.placeGoal = true;
+        })
+        this.key_triggered_button("Performance Mode", ["p"], () => this.performanceMode = !this.performanceMode);
+        this.key_triggered_button("Uber Performance Mode", ["u"], () => this.uberPerformanceMode = !this.uberPerformanceMode);
     }
 
     texture_buffer_init(gl) {
@@ -266,8 +285,8 @@ export class Team_Project extends Scene {
     constructor() {
         super();
         
-        this.performanceMode = true;
-        this.uberPerformanceMode = true;
+        this.performanceMode = false;
+        this.uberPerformanceMode = false;
         
         //creates a blank custom texture for the grass occlusion
         this.grassOcclusionTexture = new Dynamic_Texture(256, 256);
@@ -278,8 +297,11 @@ export class Team_Project extends Scene {
         this.treeSpecularTexture = new Texture("assets/palm_tree/specular.png");
         this.treeNormalTexture = new Texture("assets/palm_tree/normal.png");
         this.grassGroundTexture = new Texture("assets/textures/ground2.png");
-        this.waterNormal = new Texture("assets/textures/water_normal.png");
         this.robotTexture = new Texture("assets/robot/greenTEX.png");
+        this.goalTexture = new Texture("assets/robot/YellowTEX.png");
+        this.waterDerivativeHeight = new Texture("assets/textures/water_derivative_height.png");
+        this.waterNormal = new Texture("assets/textures/water_normal.png");
+        this.waterFlowMap = new Texture("assets/textures/flow_speed_noise.png");
         
         this.shapes = {
             'axis' : new defs.Axis_Arrows(),
@@ -299,12 +321,14 @@ export class Team_Project extends Scene {
         this.solveMaze = false;
         this.placeRobot = false;
         this.robotMov = false;
+        this.placeGoal = false;
+        
         //grass vars
         this.grass_color = hex_color("#2d8f06");
         this.ground_color = hex_color("#556208");
 
         //variables to deal with light and shadows
-        this.lightDepthTextureSize = 4096;
+        this.lightDepthTextureSize = (this.performanceMode) ? (this.uberPerformanceMode ? 1024 : 2048) : 4096;
         this.light_position = vec4(23, 20, -23, 0);
         this.light_color = color(5,5,5,0);
         this.light_view_target = vec4(0, 0, 0, 1);
@@ -335,33 +359,29 @@ export class Team_Project extends Scene {
                 light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat}), "TRIANGLE_STRIP");
 
         this.water_plane = new Scene_Object(new Triangle_Strip_Plane(26,26, Vector3.create(0,0,0), 7), Mat4.translation(0,-0.7,0),
-            new Material(new Water_Shader(), {shallow_color: hex_color("#0bc9da"), deep_color: hex_color("#213ebd"), ambient: 0.0, diffusivity: 0.0003, specularity: 0.4, smoothness: 100,
-            depth_texture: null, bg_color_texture: null, water_normal: this.waterNormal}), "TRIANGLE_STRIP");
+            new Material(new Water_Shader(), {shallow_color: hex_color("#0bc9da"), deep_color: hex_color("#3e53af"), ambient: 0.0, diffusivity: 1.0, specularity: 0.025, smoothness: 1,
+            depth_texture: null, bg_color_texture: null, water_normal: this.waterNormal, derivative_height: this.waterDerivativeHeight, water_flow: this.waterFlowMap}), "TRIANGLE_STRIP");
 
         //the main grass plane has a higher density since we want the deformation to look smooth
         this.grass_plane = new Scene_Object(new Triangle_Strip_Plane(26, 26, Vector3.create(0,0,0), 7),
             Mat4.translation(0,0,0), new Material(new Grass_Shader_Shadow(0), {grass_color: this.grass_color, ground_color: this.ground_color, ground_texture: this.grassGroundTexture,
                 texture: this.grassOcclusionTexture, ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100, fake_shadow_layer: false,
                 light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat}), "TRIANGLE_STRIP");
-
-        // this.noiseTexture1 = new Texture('assets/Blue.png', "LINEAR");
-        // this.noiseTexture2 = new Texture('assets/Perlin2.png', "LINEAR");
-        //
-        // this.grass_plane = new Scene_Object(new Triangle_Strip_Plane(26, 26, Vector3.create(0,0,0), 7),
-        //     Mat4.translation(0,0,0), new Material(new Grass_Shader_Shadow_Textured(0), {grass_color: hex_color("#38af18"), ground_color: hex_color("#544101"),
-        //         texture: this.grassOcclusionTexture, ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100, fake_shadow_layer: false,
-        //         light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat,
-        //         noiseTexture1: this.noiseTexture1, noiseTexture2: this.noiseTexture2}), "TRIANGLE_STRIP");
-
+        
         //the skybox is just a sphere with the shader that makes the color look vaguely like sky above. We put everything inside this sphere
         this.skybox = new Scene_Object(new defs.Subdivision_Sphere(4), Mat4.scale(80, 80,80),
-            new Material(new Skybox_Shader(), {top_color: hex_color("#268b9a"), mid_color: hex_color("#d1eaf6"), bottom_color: hex_color("#3d8f2b")}));
+            new Material(new Skybox_Shader(), {top_color: hex_color("#268b9a"), mid_color: hex_color("#d1eaf6"), bottom_color: hex_color("#3d8f2b"), light_position: this.light_position}));
 
-        this.robot = new Scene_Object(this.shapes.robot, Mat4.translation(0, -50, 0), new Material(new Shadow_Textured_Phong(), {ambient: 0.4, diffusivity: 0.2, specularity: 0.05, smoothness: 1, color_texture: this.robotTexture,
-                light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat}),)
+        this.robot = new Scene_Object(this.shapes.robot, Mat4.translation(-500, -500, -500), new Material(new Shadow_Textured_Phong(), {ambient: 0.4, diffusivity: 0.2, specularity: 0.05, smoothness: 1, color_texture: this.robotTexture,
+                light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat}));
+    
+        this.goal = new Scene_Object(this.shapes.robot, Mat4.translation(-500, -500, -500), new Material(new Shadow_Textured_Phong(), {ambient: 0.4, diffusivity: 0.2, specularity: 0.05, smoothness: 1, color_texture: this.goalTexture,
+            light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat}))
 
         this.pathArr = [];
         this.obstacleArr = Array(26*7).fill(1).map(() => Array(26*7).fill(1));
+        this.startPos = [0, 0];
+        this.goalPos = [100, 100];
         
 
     }
@@ -380,6 +400,12 @@ export class Team_Project extends Scene {
         }
         this.robot.drawObject(context, program_state);
         this.robot.material.light_depth_texture = null;
+    
+        if (this.goal.material.light_depth_texture == null) {
+            this.goal.material.light_depth_texture = this.lightDepthTexture;
+        }
+        this.goal.drawObject(context, program_state);
+        this.goal.material.light_depth_texture = null;
         
         if (this.background_grass_plane.material.light_depth_texture == null) {
             this.background_grass_plane.material.light_depth_texture = this.lightDepthTexture;
@@ -428,6 +454,7 @@ export class Team_Project extends Scene {
         const t = program_state.animation_time;
         
         this.robot.drawOverrideMaterial(context, program_state, this.materials.plain);
+        this.goal.drawOverrideMaterial(context, program_state, this.materials.plain);
 
         this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plain);
         this.background_grass_plane.material.draw_shadow = false;
@@ -495,16 +522,21 @@ export class Team_Project extends Scene {
             else if (this.placeRobot === true) {
                 let dest = this.getClosestLocOnPlane(this.grass_plane, context, program_state, true);
                 this.robot.transform = Mat4.translation(dest[0], 0.77 + dest[1], dest[2]).times(Mat4.rotation(Math.PI, 0, 1, 0));
+                this.startPos = [Math.floor(7 * (dest[0] + 12)), Math.floor(7 * (dest[2] + 12))];
+            }
+            else if (this.placeGoal === true) {
+                let dest = this.getClosestLocOnPlane(this.grass_plane, context, program_state, true);
+                this.goal.transform = Mat4.translation(dest[0], 0.77 + dest[1], dest[2]).times(Mat4.rotation(Math.PI, 0, 1, 0));
+                this.goalPos = [Math.floor(7 * (dest[0] + 12)), Math.floor(7 * (dest[2] + 12))];
             }
 
         }
         if (this.solveMaze === true) {
             let obsArr = new Graph(this.obstacleArr);
-            let result = astar.search(obsArr, obsArr.grid[0][0], obsArr.grid[50][100], {heuristic: astar.heuristics.closest});
+            let result = astar.search(obsArr, obsArr.grid[this.startPos[0]][this.startPos[1]], obsArr.grid[this.goalPos[0]][this.goalPos[1]], {heuristic: astar.heuristics.closest});
             
             for (let i = 0; i < result.length; i++) {
                 this.pathArr.push(Vector3.create(result[i].x / 7 - 12, 0.77, result[i].y / 7 - 12));
-                //this.shapesArray.push(new Scene_Object(this.shapes.rock, Mat4.translation(this.pathArr[i][0], this.pathArr[i][1], this.pathArr[i][2]), this.materials.rock));
             }
             this.robotMov = true;
             this.solveMaze = false;
@@ -520,11 +552,14 @@ export class Team_Project extends Scene {
                     isClose = false;
                 }
             }
-            if(isClose === true)
-            {
+            if(isClose === true) {
                 this.pathArr.shift();
             }
             this.robot.transform = desired.map((x,i) => Vector.from(this.robot.transform[i]).mix(x, 1));
+            if(this.pathArr.length < 14){
+                this.robotMov = false;
+                this.pathArr = [];
+            }
         }
 
         //to make the grass slowly come back after painted away, just subtract from the red value of the texture every frame

@@ -8,13 +8,16 @@ export class Skybox_Shader extends Shader {
     update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
         const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform], PCM = P.times(C).times(M);
         context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
+        context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform));
         context.uniform4fv(gpu_addresses.top_color, material.top_color);
         context.uniform4fv(gpu_addresses.mid_color, material.mid_color);
         context.uniform4fv(gpu_addresses.bottom_color, material.bottom_color);
+        context.uniform4fv(gpu_addresses.light_position, material.light_position);
     }
     shared_glsl_code() {
         return `precision mediump float;
                varying vec4 pos;
+               varying vec4 worldPosition;
            `;
     }
 
@@ -22,10 +25,12 @@ export class Skybox_Shader extends Shader {
         return this.shared_glsl_code() + `
                attribute vec3 position;    
                uniform mat4 projection_camera_model_transform;
+               uniform mat4 model_transform;
         
                 void main(){
-                    gl_Position = projection_camera_model_transform * vec4( position, 1.0 );
+                    gl_Position = projection_camera_model_transform * vec4(position, 1.0);
                     pos = vec4(position, 1.0);
+                    worldPosition = model_transform * vec4(position, 1.0);
                 }`;
     }
 
@@ -34,6 +39,7 @@ export class Skybox_Shader extends Shader {
                uniform vec4 top_color;
                uniform vec4 mid_color;
                uniform vec4 bottom_color;
+               uniform vec4 light_position;
                 
                 void main(){
                     float topGrad = pow(max(0.0, pos.y), 0.75);
@@ -41,7 +47,11 @@ export class Skybox_Shader extends Shader {
                     vec4 midColor = (1.0 - (topGrad + bottomGrad)) * mid_color;
                     vec4 topColor = topGrad * top_color;
                     vec4 bottomColor = bottomGrad * bottom_color;
-                    gl_FragColor = topColor + bottomColor + midColor;
+                    vec4 sunColor = vec4(0.0);
+                    if (distance(worldPosition, light_position ) < 41.0) {
+                        sunColor += vec4(1.0);
+                    }
+                    gl_FragColor = topColor + bottomColor + midColor + sunColor;
                 }`;
     }
 }
@@ -653,6 +663,15 @@ export class Water_Shader extends Shader{
 
         context.uniform1i(gpu_addresses.bg_color_texture, 2);
         material.bg_color_texture.activate(context, 2);
+    
+        context.uniform1i(gpu_addresses.water_normal, 3);
+        material.water_normal.activate(context, 3);
+    
+        context.uniform1i(gpu_addresses.derivative_height, 4);
+        material.derivative_height.activate(context, 4);
+    
+        context.uniform1i(gpu_addresses.water_flow, 5);
+        material.water_flow.activate(context, 5);
     }
 
     shared_glsl_code() {
@@ -666,7 +685,6 @@ export class Water_Shader extends Shader{
                 uniform vec4 shallow_color;
                 uniform vec4 deep_color;
                 varying vec2 f_texture_coord;
-                varying mat3 tbn;
                 varying vec3 N, vertex_worldspace;
                 
                 
@@ -744,7 +762,7 @@ export class Water_Shader extends Shader{
                         float specular = pow( max( dot( N, H ), 0.0 ), smoothness );
                         float attenuation = 1.0 / (1.0 + light_attenuation_factors[i] * distance_to_light * distance_to_light);
                         
-                        vec3 light_contribution = shallow_color.xyz * light_colors[i].xyz * diffusivity * diffuse
+                        vec3 light_contribution = vec3(1.0) * light_colors[i].xyz * diffusivity * diffuse
                                                                   + light_colors[i].xyz * specularity * specular;
                         result += attenuation * light_contribution;
                       }
@@ -797,24 +815,61 @@ export class Water_Shader extends Shader{
         return this.shared_glsl_code() + `
                 uniform sampler2D depth_texture;
                 uniform sampler2D bg_color_texture;
+                uniform sampler2D water_flow;
+                uniform sampler2D water_normal;
+                uniform sampler2D derivative_height;
                 
                 float linearDepth(float val){
                     val = 2.0 * val - 1.0;
                     return (2.0 * 1.0 * 500.0) / (500.0 + 1.0 - val * (500.0 - 1.0));
                 }
                 
+                vec3 FlowUVW (vec2 uv, vec2 flowVector, vec2 jump, float flowOffset, float tiling, float time, bool flowB) {
+                    float phaseOffset = flowB ? 0.5 : 0.0;
+                    float progress = fract(time + phaseOffset);
+                    vec3 uvw;
+                    uvw.xy = uv - flowVector * (progress + flowOffset);
+                    uvw.xy *= tiling;
+                    uvw.xy += phaseOffset;
+                    uvw.xy += (time - progress) * jump;
+                    uvw.z = 1.0 - abs(1.0 - 2.0 * progress);
+                    return uvw;
+                }
+                
+                vec3 UnpackDerivativeHeight(vec4 textureData) {
+                    vec3 dh = textureData.agb;
+                    dh.xy = dh.xy * 2.0 - 1.0;
+                    return dh;
+                }
+                
                 void main(){
-                    
                     float depthVal = texture2D(depth_texture, vec2((gl_FragCoord.x - 0.5) / 1919.0, (gl_FragCoord.y - 0.5) / 1079.0)).r;
-                    float depthDifference = abs(linearDepth(depthVal) - linearDepth(gl_FragCoord.z));
+                    float depthDifference = linearDepth(depthVal) - linearDepth(gl_FragCoord.z);
                     
-                    vec4 bgColor = texture2D(bg_color_texture, vec2((gl_FragCoord.x - 0.5) / 1919.0, (gl_FragCoord.y - 0.5) / 1079.0));
-
+                    vec3 flow = texture2D(water_flow, f_texture_coord).xyz;
+                    flow.xy = flow.xy * 2.0 - 1.0;
+                    flow *= 0.3;
+                    vec3 uvwA = FlowUVW(f_texture_coord, flow.xy, vec2(0.24), -0.5, 9.0, time / 45.0, false);
+                    vec3 uvwB = FlowUVW(f_texture_coord, flow.xy, vec2(0.208333), -0.5, 9.0, time / 45.0, true);
+                    float heightScale = flow.z * 0.25 + 0.75;
+                    vec3 dhA = UnpackDerivativeHeight(texture2D(derivative_height, uvwA.xy)) * uvwA.z * heightScale;
+                    vec3 dhB = UnpackDerivativeHeight(texture2D(derivative_height, uvwB.xy)) * uvwB.z * heightScale;
+                    vec3 normal = normalize(vec3(-(dhA.xy + dhB.xy), 1.0));
+                    
+                    
+                    vec2 bgSS = vec2((gl_FragCoord.x - 0.5) / 1919.0, (gl_FragCoord.y - 0.5) / 1079.0);
+                    float refractionDepthVal = texture2D(depth_texture, bgSS + (normal.xy / 35.0)).r;
+                    refractionDepthVal = linearDepth(refractionDepthVal) - linearDepth(gl_FragCoord.z);
+                    if (refractionDepthVal > 0.0)
+                        bgSS += normal.xy / 35.0;
+                    
+                    vec4 bgColor = texture2D(bg_color_texture, bgSS);
+                    vec3 lighting = phong_model_lights( normalize( normal ), vertex_worldspace);
+                    
                     float foam = ((1.0 + sin(-depthDifference * 10.0 + time * 2.0)) / 2.0) * (pow(2.0, -8.0 * depthDifference));
-                    vec3 lighting = phong_model_lights( normalize( N ), vertex_worldspace);
+                    //vec4 preColor = vec4(mix(shallow_color.xyz, deep_color.xyz, (sin(min(depthDifference / 5.0, 1.0) * 3.14159 / 2.0 ))), 1.0);
                     
-                    vec4 preColor = vec4(mix(shallow_color.xyz, deep_color.xyz, (sin(min(depthDifference / 5.0, 1.0) * 3.14159 / 2.0 ))), 1.0);
-                    gl_FragColor = preColor + bgColor * 0.3;
+                    gl_FragColor = mix(deep_color, bgColor, 1.0 - (sin(min(refractionDepthVal / 3.0, 1.0) * 3.14159 / 2.0 )));
                     gl_FragColor.xyz += lighting + foam;
                 }`;
     }
