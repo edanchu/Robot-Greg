@@ -4,7 +4,6 @@ import {
     PlainShader,
     Grass_Shader_Shadow,
     Water_Shader,
-    Grass_Shader_Shadow_Textured,
     Shadow_Textured_Phong, Shadow_Textured_Phong_Maps, Grass_Shader_Background_Shadow
 } from './shaders.js';
 import './astar.js';
@@ -68,10 +67,12 @@ export class Team_Project extends Scene {
     texture_buffer_init(gl) {
         this.lightDepthTextureGPU = gl.createTexture();
         this.lightDepthTexture = new Buffered_Texture(this.lightDepthTextureGPU);
+        this.unusedTexture = gl.createTexture();
+        
         this.cameraDepthTextureGPU = gl.createTexture();
         this.cameraDepthTexture = new Buffered_Texture(this.cameraDepthTextureGPU);
         this.cameraColorTextureGPU = gl.createTexture();
-        this.cameraColorTexture = new Buffered_Texture()
+        this.cameraColorTexture = new Buffered_Texture(this.cameraColorTextureGPU);
 
         //light
 
@@ -81,10 +82,19 @@ export class Team_Project extends Scene {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-
+        
+        gl.bindTexture(gl.TEXTURE_2D, this.unusedTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.lightDepthTextureSize, this.lightDepthTextureSize, 0, gl.RGBA, gl.UNSIGNED_BYTE, null,);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        
         this.lightDepthFramebuffer = gl.createFramebuffer();
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.lightDepthFramebuffer);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, this.lightDepthTextureGPU, 0);
+       // gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.unusedTexture, 0);
+        
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
         //camera
@@ -103,25 +113,14 @@ export class Team_Project extends Scene {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
+        gl.bindTexture(gl.TEXTURE_2D, null);
+
         this.cameraDepthFramebuffer = gl.createFramebuffer();
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.cameraDepthFramebuffer);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, this.cameraDepthTextureGPU, 0);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.cameraColorTextureGPU, 0);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-        // create a color texture of the same size as the depth texture
-        // see article why this is needed_
-        // this.unusedTexture = gl.createTexture();
-        // gl.bindTexture(gl.TEXTURE_2D, this.unusedTexture);
-        // gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.lightDepthTextureSize, this.lightDepthTextureSize,
-        //     0, gl.RGBA, gl.UNSIGNED_BYTE, null,);
-        // gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-        // gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-        // gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        // gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        // // attach it to the framebuffer
-        // gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.unusedTexture, 0);
-        // gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
 
     //helper function to get the location of the closest vertex on our plane to where the mouse is pointing, can care about or disregard yAxis position of the plane
@@ -261,6 +260,7 @@ export class Team_Project extends Scene {
         this.treeSpecularTexture = new Texture("assets/palm_tree/specular.png");
         this.treeNormalTexture = new Texture("assets/palm_tree/normal.png");
         this.grassGroundTexture = new Texture("assets/textures/ground2.png");
+        this.waterNormal = new Texture("assets/textures/water_normal.png");
         
         this.shapes = {
             'axis' : new defs.Axis_Arrows(),
@@ -313,9 +313,9 @@ export class Team_Project extends Scene {
                 ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100, fake_shadow_layer: false,
                 light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat}), "TRIANGLE_STRIP");
 
-        this.water_plane = new Scene_Object(new Triangle_Strip_Plane(5,5, Vector3.create(0,0,0), 5), Mat4.translation(-10,-0.7,-10).times(Mat4.scale(10,1,10)),
-            new Material(new Water_Shader(), {shallow_color: hex_color("#0bc9da"), deep_color: hex_color("#213ebd"), ambient: 0.0, diffusivity: 0.0, specularity: 0.7, smoothness: 100,
-            depth_texture: null, bg_color_texture: null}), "TRIANGLE_STRIP");
+        this.water_plane = new Scene_Object(new Triangle_Strip_Plane(26,26, Vector3.create(0,0,0), 7), Mat4.translation(0,-0.7,0),
+            new Material(new Water_Shader(), {shallow_color: hex_color("#0bc9da"), deep_color: hex_color("#213ebd"), ambient: 0.0, diffusivity: 0.0005, specularity: 0.02, smoothness: 10,
+            depth_texture: null, bg_color_texture: null, water_normal: this.waterNormal}), "TRIANGLE_STRIP");
 
         //the main grass plane has a higher density since we want the deformation to look smooth
         this.grass_plane = new Scene_Object(new Triangle_Strip_Plane(26, 26, Vector3.create(0,0,0), 7),
@@ -338,90 +338,116 @@ export class Team_Project extends Scene {
 
         this.pathArr = [];
         this.obstacleArr = Array(26*7).fill(1).map(() => Array(26*7).fill(1));
+        this.lkh = 0;
     }
 
-    render_scene(context, program_state, depthPass, drawGrassDepth = false, drawBackgroundGrass = true) {
+    render_scene(context, program_state) {
         const t = program_state.animation_time;
-
-        if(depthPass === false) {
-            this.skybox.drawObject(context, program_state);
-            if (this.materials.plastic_shadows.light_depth_texture == null) {
-                this.materials.plastic_shadows.light_depth_texture = this.lightDepthTexture;
-            }
-            this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plastic_shadows);
-
-
-
-            //with the way the grass shader works, you need to draw it a number of times, each time specifying which level of the grass you want to draw
-            //for the background 8-12 layers look good
-            if (this.background_grass_plane.material.light_depth_texture == null) {
-                this.background_grass_plane.material.light_depth_texture = this.lightDepthTexture;
-            }
-            this.background_grass_plane.material.draw_shadow = true;
-            for (let i = 0; i < 18; i+= 2) {
-                this.background_grass_plane.material.shader.layer = i;
-                this.background_grass_plane.drawObject(context, program_state);
-                // this.background_grass_plane.material.fake_shadow_layer = true;
-                // this.background_grass_plane.drawObject(context, program_state);
-                // this.background_grass_plane.material.fake_shadow_layer = false;
-            }
-
-            //16 layers looks good for the main grass portion. can increase or decrease later if we want
-            if(this.grass_plane.material.light_depth_texture == null) {
-                this.grass_plane.material.light_depth_texture = this.lightDepthTexture;
-            }
-            this.grass_plane.material.draw_shadow = true;
-            for (let i = 0; i < 18; i+= 2) {
-                this.grass_plane.material.shader.layer = i;
-                this.grass_plane.drawObject(context, program_state);
-                // this.grass_plane.material.fake_shadow_layer = true;
-                // this.grass_plane.drawObject(context, program_state);
-                // this.grass_plane.material.fake_shadow_layer = false;
-            }
-            if (this.materials.tree.light_depth_texture == null) {
-                this.materials.tree.light_depth_texture = this.lightDepthTexture;
-                this.materials.rock.light_depth_texture = this.lightDepthTexture;
-            }
-            for (let i = 0; i < this.shapesArray.length; i++)
-            {
-                this.shapesArray[i].drawObject(context, program_state);
-            }
-            if (this.water_plane.material.bg_color_texture == null) {
-                this.water_plane.material.bg_color_texture = this.cameraColorTexture;
-                this.water_plane.material.depth_texture = this.cameraDepthTexture;
-            }
-            this.water_plane.drawObject(context, program_state);
-
+        this.skybox.drawObject(context, program_state);
+        if (this.materials.plastic_shadows.light_depth_texture == null) {
+            this.materials.plastic_shadows.light_depth_texture = this.lightDepthTexture;
         }
-        else{
-            this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plain);
-            if (drawGrassDepth){
-                if (drawBackgroundGrass){
-                    this.background_grass_plane.material.draw_shadow = false;
-                    for (let i = 0; i < 12; i+= 3) {
-                        this.background_grass_plane.material.shader.layer = i;
-                        this.background_grass_plane.drawObject(context, program_state);
-                    }
-                }
+        this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plastic_shadows);
+        this.materials.plastic_shadows.light_depth_texture = null;
+        
+        if (this.background_grass_plane.material.light_depth_texture == null) {
+            this.background_grass_plane.material.light_depth_texture = this.lightDepthTexture;
+        }
+        this.background_grass_plane.material.draw_shadow = true;
+        for (let i = 0; i < 18; i+= 2) {
+            this.background_grass_plane.material.shader.layer = i;
+            this.background_grass_plane.drawObject(context, program_state);
+        }
+        this.background_grass_plane.material.light_depth_texture = null;
+        
+        if(this.grass_plane.material.light_depth_texture == null) {
+            this.grass_plane.material.light_depth_texture = this.lightDepthTexture;
+        }
+        this.grass_plane.material.draw_shadow = true;
+        for (let i = 0; i < 18; i+= 2) {
+            this.grass_plane.material.shader.layer = i;
+            this.grass_plane.drawObject(context, program_state);
+        }
+        this.grass_plane.material.light_depth_texture = null;
+        
+        if (this.materials.tree.light_depth_texture == null) {
+            this.materials.tree.light_depth_texture = this.lightDepthTexture;
+            this.materials.rock.light_depth_texture = this.lightDepthTexture;
+        }
+        for (let i = 0; i < this.shapesArray.length; i++) {
+            this.shapesArray[i].drawObject(context, program_state);
+        }
+        this.materials.tree.light_depth_texture = null;
+        this.materials.rock.light_depth_texture = null;
+            
+        if (this.water_plane.material.bg_color_texture == null) {
+            this.water_plane.material.bg_color_texture = this.cameraColorTexture;
+            this.water_plane.material.depth_texture = this.cameraDepthTexture;
+        }
+        this.water_plane.drawObject(context, program_state);
+        this.water_plane.material.bg_color_texture = null;
+        this.water_plane.material.depth_texture = null;
+    }
+    
+    render_scene_water_pass(context, program_state) {
+        const t = program_state.animation_time;
+        this.skybox.drawObject(context, program_state);
+        if (this.materials.plastic_shadows.light_depth_texture == null) {
+            this.materials.plastic_shadows.light_depth_texture = this.lightDepthTexture;
+        }
+        this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plastic_shadows);
+        this.materials.plastic_shadows.light_depth_texture = null;
+        
+        if (this.background_grass_plane.material.light_depth_texture == null) {
+            this.background_grass_plane.material.light_depth_texture = this.lightDepthTexture;
+        }
+        this.background_grass_plane.material.draw_shadow = true;
+        for (let i = 0; i < 18; i+= 2) {
+            this.background_grass_plane.material.shader.layer = i;
+            this.background_grass_plane.drawObject(context, program_state);
+        }
+        this.background_grass_plane.material.light_depth_texture = null;
+        
+        if(this.grass_plane.material.light_depth_texture == null) {
+            this.grass_plane.material.light_depth_texture = this.lightDepthTexture;
+        }
+        this.grass_plane.material.draw_shadow = true;
+        for (let i = 0; i < 18; i+= 2) {
+            this.grass_plane.material.shader.layer = i;
+            this.grass_plane.drawObject(context, program_state);
+        }
+        this.grass_plane.material.light_depth_texture = null;
+        
+        if (this.materials.tree.light_depth_texture == null) {
+            this.materials.tree.light_depth_texture = this.lightDepthTexture;
+            this.materials.rock.light_depth_texture = this.lightDepthTexture;
+        }
+        for (let i = 0; i < this.shapesArray.length; i++) {
+            this.shapesArray[i].drawObject(context, program_state);
+        }
+        this.materials.tree.light_depth_texture = null;
+        this.materials.rock.light_depth_texture = null;
+    }
+    
+    render_scene_shadows(context, program_state){
+        const t = program_state.animation_time;
+        
+        this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plain);
+        this.background_grass_plane.material.draw_shadow = false;
+        this.grass_plane.material.draw_shadow = false;
 
-                this.grass_plane.material.draw_shadow = false;
-                for (let i = 0; i < 14; i+= 2) {
-                    this.grass_plane.material.shader.layer = i;
-                    this.grass_plane.drawObject(context, program_state);
-                }
-            }
-            else {
-                this.grass_plane.drawOverrideMaterial(context, program_state, this.materials.plain);
-                if (drawBackgroundGrass){
-                    this.background_grass_plane.drawOverrideMaterial(context, program_state, this.materials.plain);
-                }
-            }
+        for (let i = 0; i < 12; i+= 3) {
+            this.background_grass_plane.material.shader.layer = i;
+            this.background_grass_plane.drawObject(context, program_state);
+        }
+        
+        for (let i = 0; i < 14; i+= 2) {
+            this.grass_plane.material.shader.layer = i;
+            this.grass_plane.drawObject(context, program_state);
+        }
 
-
-            for (let i = 0; i < this.shapesArray.length; i++)
-            {
+        for (let i = 0; i < this.shapesArray.length; i++) {
                 this.shapesArray[i].drawOverrideMaterial(context, program_state, this.materials.plain);
-            }
         }
     }
 
@@ -461,25 +487,22 @@ export class Team_Project extends Scene {
             }
             else if (this.placeTree === true) {
                 let dest = this.getClosestLocOnPlane(this.grass_plane, context, program_state, true);
-                this.shapesArray.push(new Scene_Object(this.shapes.tree, Mat4.translation(dest[0], 4 + dest[1], dest[2]).times(Mat4.scale(1.4,1.4,1.4)), this.materials.tree));
+                this.shapesArray.push(new Scene_Object(this.shapes.tree, Mat4.translation(dest[0], 6 + dest[1], dest[2]).times(Mat4.scale(1.7,1.7,1.7)), this.materials.tree));
             }
             else if (this.placeRock === true) {
                 let dest = this.getClosestLocOnPlane(this.grass_plane, context, program_state, true);
                 this.shapesArray.push(new Scene_Object(this.shapes.rock, Mat4.translation(dest[0], dest[1], dest[2]).times(Mat4.scale(1/2, 1/2, 1/2)), this.materials.rock));
             }
-
-
-            else if(this.solveMaze === true){
-                let obsArr = new Graph(this.obstacleArr);
-                this.pathArr = astar.search(obsArr,obsArr.grid[0][0],obsArr.grid[7][7], { heuristic: astar.heuristics.diagonal });
-                for(let i = 0; i < this.pathArr.length; i++)
-                {
-                    this.shapesArray.push(new Scene_Object(this.shapes.tree, Mat4.translation(this.pathArr[i].x/7 - 12, 3, this.pathArr[i].y/7 - 12), this.materials.plastic));
-                }
-                this.solveMaze = false;
-            }
-
+        }
+        if (this.solveMaze === true) {
+            let obsArr = new Graph(this.obstacleArr);
+            let result = astar.search(obsArr, obsArr.grid[0][0], obsArr.grid[7][7], {heuristic: astar.heuristics.diagonal});
             
+            for (let i = 0; i < result.length; i++) {
+                this.pathArr.push(Vector3.create(result[i].x / 7 - 12, 0, result[i].y / 7 - 12));
+                this.shapesArray.push(new Scene_Object(this.shapes.rock, Mat4.translation(this.pathArr[i][0], this.pathArr[i][1], this.pathArr[i][2]), this.materials.rock));
+            }
+            this.solveMaze = false;
         }
 
         //to make the grass slowly come back after painted away, just subtract from the red value of the texture every frame
@@ -492,14 +515,14 @@ export class Team_Project extends Scene {
 
         let projTransformStorage = program_state.projection_transform;
         let cameraStorage = program_state.camera_inverse;
-
+        
         this.setFrameBufferForShadows(context, program_state);
-        this.render_scene(context, program_state, true, true);
+        this.render_scene_shadows(context, program_state);
 
         this.setFrameBufferForDepthPass(context, program_state, projTransformStorage, cameraStorage);
-        this.render_scene(context, program_state, true, true, false);
+        this.render_scene_water_pass(context, program_state);
 
         this.resetFrameBuffer(context, program_state);
-        this.render_scene(context, program_state, false);
+        this.render_scene(context, program_state);
     }
 }

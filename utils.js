@@ -295,7 +295,7 @@ export class Buffered_Texture extends tiny.Graphics_Card_Object {
         // Terminate draw requests until the image file is actually loaded over the network:
         if (!this.ready)
             return;
-        const gpu_instance = super.activate(context);
+        //const gpu_instance = super.activate(context);
         context.activeTexture(context["TEXTURE" + texture_unit]);
         context.bindTexture(context.TEXTURE_2D, this.texture_buffer_pointer);
     }
