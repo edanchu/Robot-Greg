@@ -359,7 +359,7 @@ export class Team_Project extends Scene {
                 light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat}), "TRIANGLE_STRIP");
 
         this.water_plane = new Scene_Object(new Triangle_Strip_Plane(26,26, Vector3.create(0,0,0), 7), Mat4.translation(0,-0.7,0),
-            new Material(new Water_Shader(), {shallow_color: hex_color("#0bc9da"), deep_color: hex_color("#3e53af"), ambient: 0.0, diffusivity: 1.0, specularity: 0.025, smoothness: 1,
+            new Material(new Water_Shader(), {shallow_color: hex_color("#0bc9da"), deep_color: hex_color("#4877bd"), ambient: 0.0, diffusivity: 1.0, specularity: 0.025, smoothness: 1,
             depth_texture: null, bg_color_texture: null, water_normal: this.waterNormal, derivative_height: this.waterDerivativeHeight, water_flow: this.waterFlowMap}), "TRIANGLE_STRIP");
 
         //the main grass plane has a higher density since we want the deformation to look smooth

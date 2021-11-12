@@ -843,10 +843,7 @@ export class Water_Shader extends Shader{
                 }
                 
                 void main(){
-                    float depthVal = texture2D(depth_texture, vec2((gl_FragCoord.x - 0.5) / 1919.0, (gl_FragCoord.y - 0.5) / 1079.0)).r;
-                    float depthDifference = linearDepth(depthVal) - linearDepth(gl_FragCoord.z);
-                    
-                    vec3 flow = texture2D(water_flow, f_texture_coord).xyz;
+vec3 flow = texture2D(water_flow, f_texture_coord).xyz;
                     flow.xy = flow.xy * 2.0 - 1.0;
                     flow *= 0.3;
                     vec3 uvwA = FlowUVW(f_texture_coord, flow.xy, vec2(0.24), -0.5, 9.0, time / 45.0, false);
@@ -856,20 +853,25 @@ export class Water_Shader extends Shader{
                     vec3 dhB = UnpackDerivativeHeight(texture2D(derivative_height, uvwB.xy)) * uvwB.z * heightScale;
                     vec3 normal = normalize(vec3(-(dhA.xy + dhB.xy), 1.0));
                     
-                    
+                    float refractionStrength = 0.039;
                     vec2 bgSS = vec2((gl_FragCoord.x - 0.5) / 1919.0, (gl_FragCoord.y - 0.5) / 1079.0);
-                    float refractionDepthVal = texture2D(depth_texture, bgSS + (normal.xy / 35.0)).r;
+                    float refractionDepthVal = texture2D(depth_texture, bgSS + (normal.xy * refractionStrength)).r;
                     refractionDepthVal = linearDepth(refractionDepthVal) - linearDepth(gl_FragCoord.z);
                     if (refractionDepthVal > 0.0)
-                        bgSS += normal.xy / 35.0;
+                        bgSS += normal.xy * refractionStrength;
+                    
+                    
                     
                     vec4 bgColor = texture2D(bg_color_texture, bgSS);
+                    float depthVal = texture2D(depth_texture, bgSS).r;
+                    float depthDifference = linearDepth(depthVal) - linearDepth(gl_FragCoord.z);
+                    
                     vec3 lighting = phong_model_lights( normalize( normal ), vertex_worldspace);
                     
                     float foam = ((1.0 + sin(-depthDifference * 10.0 + time * 2.0)) / 2.0) * (pow(2.0, -8.0 * depthDifference));
                     //vec4 preColor = vec4(mix(shallow_color.xyz, deep_color.xyz, (sin(min(depthDifference / 5.0, 1.0) * 3.14159 / 2.0 ))), 1.0);
                     
-                    gl_FragColor = mix(deep_color, bgColor, 1.0 - (sin(min(refractionDepthVal / 3.0, 1.0) * 3.14159 / 2.0 )));
+                    gl_FragColor = mix(deep_color, bgColor, 1.0 - (sin(min(depthDifference / 3.0, 1.0) * 3.14159 / 2.0 )));
                     gl_FragColor.xyz += lighting + foam;
                 }`;
     }
