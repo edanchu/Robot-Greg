@@ -64,7 +64,7 @@ export class Team_Project extends Scene {
             this.placeRobot = false;
             this.placeGoal = false;
         });
-        this.key_triggered_button("Solve Maze", ["0"], () => {
+        this.key_triggered_button("Find Soul Mate", ["0"], () => {
             this.isRaising = false;
             this.isLowering = false;
             this.isOccluding = false;
@@ -74,7 +74,7 @@ export class Team_Project extends Scene {
             this.placeRobot = false;
             this.placeGoal = false;
         });
-        this.key_triggered_button("Place Robot", ["3"], () => {
+        this.key_triggered_button("Place Greg", ["3"], () => {
             this.isRaising = false;
             this.isLowering = false;
             this.isOccluding = false;
@@ -84,7 +84,7 @@ export class Team_Project extends Scene {
             this.placeRobot = true;
             this.placeGoal = false;
         })
-        this.key_triggered_button("Place Robot", ["4"], () => {
+        this.key_triggered_button("Place Gretchen", ["4"], () => {
             this.isRaising = false;
             this.isLowering = false;
             this.isOccluding = false;
@@ -389,11 +389,11 @@ export class Team_Project extends Scene {
     render_scene(context, program_state, drawWater) {
         const t = program_state.animation_time;
         this.skybox.drawObject(context, program_state);
-        if (this.materials.plastic_shadows.light_depth_texture == null) {
-            this.materials.plastic_shadows.light_depth_texture = this.lightDepthTexture;
-        }
-        this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plastic_shadows);
-        this.materials.plastic_shadows.light_depth_texture = null;
+        // if (this.materials.plastic_shadows.light_depth_texture == null) {
+        //     this.materials.plastic_shadows.light_depth_texture = this.lightDepthTexture;
+        // }
+        // this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plastic_shadows);
+        // this.materials.plastic_shadows.light_depth_texture = null;
 
         if (this.robot.material.light_depth_texture == null) {
             this.robot.material.light_depth_texture = this.lightDepthTexture;
@@ -456,7 +456,7 @@ export class Team_Project extends Scene {
         this.robot.drawOverrideMaterial(context, program_state, this.materials.plain);
         this.goal.drawOverrideMaterial(context, program_state, this.materials.plain);
 
-        this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plain);
+        //this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plain);
         this.background_grass_plane.material.draw_shadow = false;
         this.grass_plane.material.draw_shadow = false;
         
