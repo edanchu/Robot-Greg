@@ -650,13 +650,9 @@ export class Water_Shader extends Shader{
     
         material.depth_texture.activate(context, 1);
         context.uniform1i(gpu_addresses.depth_texture, 1);
-        
-        
-        context.uniform1i(gpu_addresses.water_normal, 2);
-        material.water_normal.activate(context, 2);
 
-        context.uniform1i(gpu_addresses.bg_color_texture, 3);
-        material.bg_color_texture.activate(context, 3);
+        context.uniform1i(gpu_addresses.bg_color_texture, 2);
+        material.bg_color_texture.activate(context, 2);
     }
 
     shared_glsl_code() {
@@ -801,7 +797,6 @@ export class Water_Shader extends Shader{
         return this.shared_glsl_code() + `
                 uniform sampler2D depth_texture;
                 uniform sampler2D bg_color_texture;
-                //uniform sampler2D water_normal;
                 
                 float linearDepth(float val){
                     val = 2.0 * val - 1.0;
@@ -809,19 +804,17 @@ export class Water_Shader extends Shader{
                 }
                 
                 void main(){
-                    //vec3 normalMap = texture2D(water_normal, f_texture_coord).xyz;
-                    //normalMap = tbn * normalMap;
                     
                     float depthVal = texture2D(depth_texture, vec2((gl_FragCoord.x - 0.5) / 1919.0, (gl_FragCoord.y - 0.5) / 1079.0)).r;
-                    vec4 bgColor = texture2D(bg_color_texture, vec2((gl_FragCoord.x - 0.5) / 1919.0, (gl_FragCoord.y - 0.5) / 1079.0));
                     float depthDifference = abs(linearDepth(depthVal) - linearDepth(gl_FragCoord.z));
-                    //gl_FragColor = vec4(mix(shallow_color.xyz, deep_color.xyz, sin(min(depthDifference / 5.0, 1.0) * 3.14159 / 2.0 )),1.0 + 0.0 * sin(min(depthDifference / 2.0, 1.0) * 3.14159 / 2.0 ));
-                    gl_FragColor = bgColor;
-                    //gl_FragColor = vec4(normalMap.xyz, 1.0);
-                    float foam = 0.0;
-                    foam = ((1.0 + sin(-depthDifference * 10.0 + time * 2.0)) / 2.0) * (pow(2.0, -8.0 * depthDifference));
                     
-                    vec3 lighting = vec3(0.0);//phong_model_lights( normalize( N ), vertex_worldspace);
+                    vec4 bgColor = texture2D(bg_color_texture, vec2((gl_FragCoord.x - 0.5) / 1919.0, (gl_FragCoord.y - 0.5) / 1079.0));
+
+                    float foam = ((1.0 + sin(-depthDifference * 10.0 + time * 2.0)) / 2.0) * (pow(2.0, -8.0 * depthDifference));
+                    vec3 lighting = phong_model_lights( normalize( N ), vertex_worldspace);
+                    
+                    vec4 preColor = vec4(mix(shallow_color.xyz, deep_color.xyz, (sin(min(depthDifference / 5.0, 1.0) * 3.14159 / 2.0 ))), 1.0);
+                    gl_FragColor = preColor + bgColor * 0.3;
                     gl_FragColor.xyz += lighting + foam;
                 }`;
     }
