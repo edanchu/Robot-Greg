@@ -298,7 +298,7 @@ export class Team_Project extends Scene {
         this.placeTree = false;
         this.solveMaze = false;
         this.placeRobot = false;
-
+        this.robotMov = false;
         //grass vars
         this.grass_color = hex_color("#2d8f06");
         this.ground_color = hex_color("#556208");
@@ -500,13 +500,31 @@ export class Team_Project extends Scene {
         }
         if (this.solveMaze === true) {
             let obsArr = new Graph(this.obstacleArr);
-            let result = astar.search(obsArr, obsArr.grid[0][0], obsArr.grid[50][100], {heuristic: astar.heuristics.diagonal});
+            let result = astar.search(obsArr, obsArr.grid[0][0], obsArr.grid[50][100], {heuristic: astar.heuristics.closest});
             
             for (let i = 0; i < result.length; i++) {
-                this.pathArr.push(Vector3.create(result[i].x / 7 - 12, 0, result[i].y / 7 - 12));
-                this.shapesArray.push(new Scene_Object(this.shapes.rock, Mat4.translation(this.pathArr[i][0], this.pathArr[i][1], this.pathArr[i][2]), this.materials.rock));
+                this.pathArr.push(Vector3.create(result[i].x / 7 - 12, 0.77, result[i].y / 7 - 12));
+                //this.shapesArray.push(new Scene_Object(this.shapes.rock, Mat4.translation(this.pathArr[i][0], this.pathArr[i][1], this.pathArr[i][2]), this.materials.rock));
             }
+            this.robotMov = true;
             this.solveMaze = false;
+        }
+
+        if(this.robotMov === true)
+        {
+            let isClose = true;
+            let desired = Mat4.translation(this.pathArr[0][0], this.pathArr[0][1], this.pathArr[0][2]).times(Mat4.rotation(Math.PI, 0, 1, 0));
+            for(let i = 0; i < 4; i++){
+                let distance = (Vector.from(desired[i]).minus(Vector.from(this.robot.transform[i]))).norm();
+                if(distance > 1){
+                    isClose = false;
+                }
+            }
+            if(isClose === true)
+            {
+                this.pathArr.shift();
+            }
+            this.robot.transform = desired.map((x,i) => Vector.from(this.robot.transform[i]).mix(x, 1));
         }
 
         //to make the grass slowly come back after painted away, just subtract from the red value of the texture every frame
