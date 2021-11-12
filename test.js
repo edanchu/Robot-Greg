@@ -251,6 +251,9 @@ export class Team_Project extends Scene {
     constructor() {
         super();
         
+        this.performanceMode = false;
+        this.uberPerformanceMode = false;
+        
         //creates a blank custom texture for the grass occlusion
         this.grassOcclusionTexture = new Dynamic_Texture(256, 256);
         this.rockDiffuseTexture = new Texture("assets/stone/stone_albedo.png");
@@ -354,7 +357,8 @@ export class Team_Project extends Scene {
             this.background_grass_plane.material.light_depth_texture = this.lightDepthTexture;
         }
         this.background_grass_plane.material.draw_shadow = true;
-        for (let i = 0; i < 18; i+= 2) {
+        let bglayers = this.performanceMode ? 1:12;
+        for (let i = 0; i < bglayers; i+= 2) {
             this.background_grass_plane.material.shader.layer = i;
             this.background_grass_plane.drawObject(context, program_state);
         }
@@ -364,7 +368,8 @@ export class Team_Project extends Scene {
             this.grass_plane.material.light_depth_texture = this.lightDepthTexture;
         }
         this.grass_plane.material.draw_shadow = true;
-        for (let i = 0; i < 18; i+= 2) {
+        let layers = this.uberPerformanceMode ? 1 : 18;
+        for (let i = 0; i < layers; i+= 2) {
             this.grass_plane.material.shader.layer = i;
             this.grass_plane.drawObject(context, program_state);
         }
@@ -397,13 +402,15 @@ export class Team_Project extends Scene {
         this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plain);
         this.background_grass_plane.material.draw_shadow = false;
         this.grass_plane.material.draw_shadow = false;
-
-        for (let i = 0; i < 12; i+= 3) {
+        
+        let bglayers = this.performanceMode ? 1:12;
+        for (let i = 0; i < bglayers; i+= 3) {
             this.background_grass_plane.material.shader.layer = i;
             this.background_grass_plane.drawObject(context, program_state);
         }
         
-        for (let i = 0; i < 14; i+= 2) {
+        let layers = this.uberPerformanceMode ? 1 : 14;
+        for (let i = 0; i < layers; i+= 2) {
             this.grass_plane.material.shader.layer = i;
             this.grass_plane.drawObject(context, program_state);
         }
