@@ -341,7 +341,7 @@ export class Team_Project extends Scene {
         this.lkh = 0;
     }
 
-    render_scene(context, program_state) {
+    render_scene(context, program_state, drawWater) {
         const t = program_state.animation_time;
         this.skybox.drawObject(context, program_state);
         if (this.materials.plastic_shadows.light_depth_texture == null) {
@@ -379,54 +379,16 @@ export class Team_Project extends Scene {
         }
         this.materials.tree.light_depth_texture = null;
         this.materials.rock.light_depth_texture = null;
-            
-        if (this.water_plane.material.bg_color_texture == null) {
-            this.water_plane.material.bg_color_texture = this.cameraColorTexture;
-            this.water_plane.material.depth_texture = this.cameraDepthTexture;
-        }
-        this.water_plane.drawObject(context, program_state);
-        this.water_plane.material.bg_color_texture = null;
-        this.water_plane.material.depth_texture = null;
-    }
-    
-    render_scene_water_pass(context, program_state) {
-        const t = program_state.animation_time;
-        this.skybox.drawObject(context, program_state);
-        if (this.materials.plastic_shadows.light_depth_texture == null) {
-            this.materials.plastic_shadows.light_depth_texture = this.lightDepthTexture;
-        }
-        this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plastic_shadows);
-        this.materials.plastic_shadows.light_depth_texture = null;
         
-        if (this.background_grass_plane.material.light_depth_texture == null) {
-            this.background_grass_plane.material.light_depth_texture = this.lightDepthTexture;
+        if (drawWater) {
+            if (this.water_plane.material.bg_color_texture == null) {
+                this.water_plane.material.bg_color_texture = this.cameraColorTexture;
+                this.water_plane.material.depth_texture = this.cameraDepthTexture;
+            }
+            this.water_plane.drawObject(context, program_state);
+            this.water_plane.material.bg_color_texture = null;
+            this.water_plane.material.depth_texture = null;
         }
-        this.background_grass_plane.material.draw_shadow = true;
-        for (let i = 0; i < 18; i+= 2) {
-            this.background_grass_plane.material.shader.layer = i;
-            this.background_grass_plane.drawObject(context, program_state);
-        }
-        this.background_grass_plane.material.light_depth_texture = null;
-        
-        if(this.grass_plane.material.light_depth_texture == null) {
-            this.grass_plane.material.light_depth_texture = this.lightDepthTexture;
-        }
-        this.grass_plane.material.draw_shadow = true;
-        for (let i = 0; i < 18; i+= 2) {
-            this.grass_plane.material.shader.layer = i;
-            this.grass_plane.drawObject(context, program_state);
-        }
-        this.grass_plane.material.light_depth_texture = null;
-        
-        if (this.materials.tree.light_depth_texture == null) {
-            this.materials.tree.light_depth_texture = this.lightDepthTexture;
-            this.materials.rock.light_depth_texture = this.lightDepthTexture;
-        }
-        for (let i = 0; i < this.shapesArray.length; i++) {
-            this.shapesArray[i].drawObject(context, program_state);
-        }
-        this.materials.tree.light_depth_texture = null;
-        this.materials.rock.light_depth_texture = null;
     }
     
     render_scene_shadows(context, program_state){
@@ -520,9 +482,9 @@ export class Team_Project extends Scene {
         this.render_scene_shadows(context, program_state);
 
         this.setFrameBufferForDepthPass(context, program_state, projTransformStorage, cameraStorage);
-        this.render_scene_water_pass(context, program_state);
+        this.render_scene(context, program_state, false);
 
         this.resetFrameBuffer(context, program_state);
-        this.render_scene(context, program_state);
+        this.render_scene(context, program_state, true);
     }
 }
