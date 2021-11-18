@@ -631,6 +631,12 @@ export class Water_Shader extends Shader{
         const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform], PCM = P.times(C).times(M);
         context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
         context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform.transposed()));
+        context.uniformMatrix4fv(gpu_addresses.inv_transpose_model_transform, false, Matrix.flatten_2D_to_1D(Mat4.inverse(model_transform)));
+        context.uniformMatrix4fv(gpu_addresses.view_matrix, false, Matrix.flatten_2D_to_1D(graphics_state.camera_inverse.transposed()));
+        context.uniformMatrix4fv(gpu_addresses.inv_transpose_view_matrix, false, Matrix.flatten_2D_to_1D(Mat4.inverse(graphics_state.camera_inverse)));
+        context.uniformMatrix4fv(gpu_addresses.proj_to_view, false, Matrix.flatten_2D_to_1D(Mat4.inverse(graphics_state.projection_transform).transposed()));
+        context.uniformMatrix4fv(gpu_addresses.proj_matrix, false, Matrix.flatten_2D_to_1D(graphics_state.projection_transform.transposed()));
+        context.uniform3fv(gpu_addresses.camera_position, material.camera_position);
         context.uniform1f(gpu_addresses.time, graphics_state.animation_time / 1000);
         context.uniform4fv(gpu_addresses.shallow_color, material.shallow_color);
         context.uniform4fv(gpu_addresses.deep_color, material.deep_color);
@@ -801,9 +807,12 @@ export class Water_Shader extends Shader{
                 attribute vec2 texture_coord;
                 uniform mat4 projection_camera_model_transform;
                 uniform mat4 model_transform;
+                uniform mat4 view_matrix;
+                varying vec3 vertex_viewspace;
                 
                 void main(){
                     vertex_worldspace = (model_transform * vec4( position, 1.0 )).xyz;
+                    vertex_viewspace = (view_matrix * model_transform * vec4( position, 1.0 )).xyz;
                     gl_Position = projection_camera_model_transform * vec4( position, 1.0 );
                     N = normalize( mat3( model_transform ) * normalize(normal) / squared_scale);
                     f_texture_coord = texture_coord;
@@ -818,10 +827,41 @@ export class Water_Shader extends Shader{
                 uniform sampler2D water_flow;
                 uniform sampler2D water_normal;
                 uniform sampler2D derivative_height;
+                uniform mat4 proj_to_view;
+                uniform mat4 proj_matrix;
+                uniform mat4 model_transform;
+                uniform vec3 camera_position;
+                uniform mat4 view_matrix;
+                varying vec3 vertex_viewspace;
+                uniform mat4 inv_transpose_view_matrix;
+                uniform mat4 inv_transpose_model_transform;
                 
-                float linearDepth(float val){
+                 float linearDepth(float val){
                     val = 2.0 * val - 1.0;
                     return (2.0 * 1.0 * 500.0) / (500.0 + 1.0 - val * (500.0 - 1.0));
+                }
+                
+                vec3 binSearch(inout vec3 pos, inout vec3 dir, inout float delta){
+                    vec4 coords;
+                    float depth;
+                    for (float i = 0.0; i < 10.0; i++){
+                        dir *= 1.1;
+                         coords = proj_matrix * vec4(pos,1.0);
+                         coords.xy = (coords.xy/coords.w) * 0.5 + 0.5;
+                         depth = linearDepth(texture2D(depth_texture, coords.xy).r);
+
+                        delta = pos.z - depth;
+                        if (delta < 0.0){
+                            pos += dir;
+                        }
+                        else{
+                            pos -= dir;
+                        }
+
+                    }
+                    coords = proj_matrix * vec4(pos,1.0);
+                    coords.xy = (coords.xy/coords.w) * 0.5 + 0.5;
+                    return vec3(coords.xy, depth);
                 }
                 
                 vec3 FlowUVW (vec2 uv, vec2 flowVector, vec2 jump, float flowOffset, float tiling, float time, bool flowB) {
@@ -843,7 +883,7 @@ export class Water_Shader extends Shader{
                 }
                 
                 void main(){
-vec3 flow = texture2D(water_flow, f_texture_coord).xyz;
+                    vec3 flow = texture2D(water_flow, f_texture_coord).xyz;
                     flow.xy = flow.xy * 2.0 - 1.0;
                     flow *= 0.3;
                     vec3 uvwA = FlowUVW(f_texture_coord, flow.xy, vec2(0.24), -0.5, 9.0, time / 45.0, false);
@@ -866,13 +906,37 @@ vec3 flow = texture2D(water_flow, f_texture_coord).xyz;
                     float depthVal = texture2D(depth_texture, bgSS).r;
                     float depthDifference = linearDepth(depthVal) - linearDepth(gl_FragCoord.z);
                     
+                    // vec3 reflectDirection = reflect(normalize(vertex_viewspace), normalize((inv_transpose_view_matrix * inv_transpose_model_transform * vec4(N, 0.0)).xyz));
+                    // vec3 reflectColor = vec3(0.0);
+                    // vec3 search = vec3(0.0);
+                    // bool reflectFound = false;
+                    // for(float i = 0.0; i < 5.0; i++){
+                    //     if (reflectDirection.z > 0.0) break;
+                    //     reflectDirection *= 1.3;
+                    //     vec3 testPoint = vertex_viewspace + reflectDirection;
+                    //     vec4 testPosSS = (proj_matrix * vec4(testPoint, 1.0));
+                    //     testPosSS.xy = ( testPosSS.xy / testPosSS.w) * 0.5 + 0.5;
+                    //     float testPointDepth = linearDepth(texture2D(depth_texture, testPosSS.xy).r);
+                    //     float diff = testPoint.z - testPointDepth;
+                    //     if (diff < 0.0){
+                    //         reflectFound = true;
+                    //         reflectDirection = normalize(reflectDirection);
+                    //         search = binSearch(testPoint, reflectDirection, diff);
+                    //         break;
+                    //     }
+                    // }
+                    // if (reflectFound == true){
+                    //     reflectColor += texture2D(bg_color_texture, search.xy + (normal.xy * refractionStrength)).xyz;
+                    // }
+                    
                     vec3 lighting = phong_model_lights( normalize( normal ), vertex_worldspace);
                     
-                    float foam = ((1.0 + sin(-depthDifference * 10.0 + time * 2.0)) / 2.0) * (pow(2.0, -8.0 * depthDifference));
+                    float foam = ((2.5 + sin(-depthDifference * 10.0 + time * 2.0)) / 2.0) * (pow(2.0, -8.0 * depthDifference));
                     //vec4 preColor = vec4(mix(shallow_color.xyz, deep_color.xyz, (sin(min(depthDifference / 5.0, 1.0) * 3.14159 / 2.0 ))), 1.0);
                     
-                    gl_FragColor = mix(deep_color, bgColor, 1.0 - (sin(min(depthDifference / 3.0, 1.0) * 3.14159 / 2.0 )));
-                    gl_FragColor.xyz += lighting + foam;
+                      gl_FragColor = mix(mix(shallow_color, deep_color, (sin(min(depthDifference / 5.0, 1.0) * 3.14159 / 2.0 ))), bgColor, 1.0 - (sin(min(depthDifference / 8.0, 1.0) * 3.14159 / 2.0 )));
+                      gl_FragColor.xyz += lighting + foam;
+                      //gl_FragColor.xyz += reflectColor;
                 }`;
     }
 }

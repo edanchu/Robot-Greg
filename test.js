@@ -64,16 +64,6 @@ export class Team_Project extends Scene {
             this.placeRobot = false;
             this.placeGoal = false;
         });
-        this.key_triggered_button("Find Soul Mate", ["0"], () => {
-            this.isRaising = false;
-            this.isLowering = false;
-            this.isOccluding = false;
-            this.placeRock = false;
-            this.placeTree = false;
-            this.solveMaze = true;
-            this.placeRobot = false;
-            this.placeGoal = false;
-        });
         this.key_triggered_button("Place Greg", ["3"], () => {
             this.isRaising = false;
             this.isLowering = false;
@@ -94,6 +84,16 @@ export class Team_Project extends Scene {
             this.placeRobot = false;
             this.placeGoal = true;
         })
+        this.key_triggered_button("Find Soul Mate", ["0"], () => {
+            this.isRaising = false;
+            this.isLowering = false;
+            this.isOccluding = false;
+            this.placeRock = false;
+            this.placeTree = false;
+            this.solveMaze = true;
+            this.placeRobot = false;
+            this.placeGoal = false;
+        });
         this.key_triggered_button("Performance Mode", ["p"], () => this.performanceMode = !this.performanceMode);
         this.key_triggered_button("Uber Performance Mode", ["u"], () => this.uberPerformanceMode = !this.uberPerformanceMode);
     }
@@ -230,6 +230,10 @@ export class Team_Project extends Scene {
                     plane.shape.removeVertexHeight(dx + planeLoc[0], -dy + planeLoc[1] - 1, strength);
                     plane.shape.removeVertexHeight(-dx + planeLoc[0] - 1, dy + planeLoc[1], strength);
                     plane.shape.removeVertexHeight(-dx + planeLoc[0] - 1, -dy + planeLoc[1] - 1, strength);
+                    this.obstacleArr[dx + planeLoc[0]][dy + planeLoc[1]] = 0;
+                    this.obstacleArr[dx + planeLoc[0]][-dy + planeLoc[1] - 1] = 0;
+                    this.obstacleArr[-dx + planeLoc[0] - 1][dy + planeLoc[1]] = 0;
+                    this.obstacleArr[-dx + planeLoc[0] - 1][-dy + planeLoc[1] - 1] = 0;
                     dx++;
                 }
             }
@@ -253,6 +257,10 @@ export class Team_Project extends Scene {
                     plane.shape.addVertexHeight(dx + planeLoc[0], -dy + planeLoc[1] - 1, strength);
                     plane.shape.addVertexHeight(-dx + planeLoc[0] - 1, dy + planeLoc[1], strength);
                     plane.shape.addVertexHeight(-dx + planeLoc[0] - 1, -dy + planeLoc[1] - 1, strength);
+                    this.obstacleArr[dx + planeLoc[0]][dy + planeLoc[1]] = 0;
+                    this.obstacleArr[dx + planeLoc[0]][-dy + planeLoc[1] - 1] = 0;
+                    this.obstacleArr[-dx + planeLoc[0] - 1][dy + planeLoc[1]] = 0;
+                    this.obstacleArr[-dx + planeLoc[0] - 1][-dy + planeLoc[1] - 1] = 0;
                     dx++;
                 }
             }
@@ -326,7 +334,9 @@ export class Team_Project extends Scene {
         //grass vars
         this.grass_color = hex_color("#2d8f06");
         this.ground_color = hex_color("#556208");
-
+        
+        this.cameraPosition = [];
+        
         //variables to deal with light and shadows
         this.lightDepthTextureSize = (this.performanceMode) ? (this.uberPerformanceMode ? 1024 : 2048) : 4096;
         this.light_position = vec4(23, 20, -23, 0);
@@ -359,8 +369,9 @@ export class Team_Project extends Scene {
                 light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat}), "TRIANGLE_STRIP");
 
         this.water_plane = new Scene_Object(new Triangle_Strip_Plane(26,26, Vector3.create(0,0,0), 7), Mat4.translation(0,-0.7,0),
-            new Material(new Water_Shader(), {shallow_color: hex_color("#0bc9da"), deep_color: hex_color("#4877bd"), ambient: 0.0, diffusivity: 1.0, specularity: 0.025, smoothness: 1,
-            depth_texture: null, bg_color_texture: null, water_normal: this.waterNormal, derivative_height: this.waterDerivativeHeight, water_flow: this.waterFlowMap}), "TRIANGLE_STRIP");
+            new Material(new Water_Shader(), {shallow_color: hex_color("#00ffe8"), deep_color: hex_color("#052a44"), ambient: 0.0, diffusivity: 1.0, specularity: 0.025, smoothness: 1,
+            depth_texture: null, bg_color_texture: null, water_normal: this.waterNormal, derivative_height: this.waterDerivativeHeight, water_flow: this.waterFlowMap,
+            camera_position: this.cameraPosition}), "TRIANGLE_STRIP");
 
         //the main grass plane has a higher density since we want the deformation to look smooth
         this.grass_plane = new Scene_Object(new Triangle_Strip_Plane(26, 26, Vector3.create(0,0,0), 7),
@@ -383,44 +394,40 @@ export class Team_Project extends Scene {
         this.startPos = [0, 0];
         this.goalPos = [100, 100];
         
+        
 
     }
 
     render_scene(context, program_state, drawWater) {
-        const t = program_state.animation_time;
-        this.skybox.drawObject(context, program_state);
+        
+        if (drawWater)
+            this.skybox.drawObject(context, program_state);
         // if (this.materials.plastic_shadows.light_depth_texture == null) {
         //     this.materials.plastic_shadows.light_depth_texture = this.lightDepthTexture;
         // }
         // this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plastic_shadows);
         // this.materials.plastic_shadows.light_depth_texture = null;
 
-        if (this.robot.material.light_depth_texture == null) {
-            this.robot.material.light_depth_texture = this.lightDepthTexture;
-        }
+        this.robot.material.light_depth_texture = this.lightDepthTexture;
         this.robot.drawObject(context, program_state);
         this.robot.material.light_depth_texture = null;
-    
-        if (this.goal.material.light_depth_texture == null) {
-            this.goal.material.light_depth_texture = this.lightDepthTexture;
-        }
+        
+        this.goal.material.light_depth_texture = this.lightDepthTexture;
         this.goal.drawObject(context, program_state);
         this.goal.material.light_depth_texture = null;
         
-        if (this.background_grass_plane.material.light_depth_texture == null) {
+        if(drawWater) {
             this.background_grass_plane.material.light_depth_texture = this.lightDepthTexture;
+            this.background_grass_plane.material.draw_shadow = true;
+            let bglayers = this.performanceMode ? 1 : 12;
+            for (let i = 0; i < bglayers; i += 2) {
+                this.background_grass_plane.material.shader.layer = i;
+                this.background_grass_plane.drawObject(context, program_state);
+            }
+            this.background_grass_plane.material.light_depth_texture = null;
         }
-        this.background_grass_plane.material.draw_shadow = true;
-        let bglayers = this.performanceMode ? 1:12;
-        for (let i = 0; i < bglayers; i+= 2) {
-            this.background_grass_plane.material.shader.layer = i;
-            this.background_grass_plane.drawObject(context, program_state);
-        }
-        this.background_grass_plane.material.light_depth_texture = null;
         
-        if(this.grass_plane.material.light_depth_texture == null) {
-            this.grass_plane.material.light_depth_texture = this.lightDepthTexture;
-        }
+        this.grass_plane.material.light_depth_texture = this.lightDepthTexture;
         this.grass_plane.material.draw_shadow = true;
         let layers = this.uberPerformanceMode ? 1 : 18;
         for (let i = 0; i < layers; i+= 2) {
@@ -429,10 +436,8 @@ export class Team_Project extends Scene {
         }
         this.grass_plane.material.light_depth_texture = null;
         
-        if (this.materials.tree.light_depth_texture == null) {
-            this.materials.tree.light_depth_texture = this.lightDepthTexture;
-            this.materials.rock.light_depth_texture = this.lightDepthTexture;
-        }
+        this.materials.tree.light_depth_texture = this.lightDepthTexture;
+        this.materials.rock.light_depth_texture = this.lightDepthTexture;
         for (let i = 0; i < this.shapesArray.length; i++) {
             this.shapesArray[i].drawObject(context, program_state);
         }
@@ -533,7 +538,7 @@ export class Team_Project extends Scene {
         }
         if (this.solveMaze === true) {
             let obsArr = new Graph(this.obstacleArr);
-            let result = astar.search(obsArr, obsArr.grid[this.startPos[0]][this.startPos[1]], obsArr.grid[this.goalPos[0]][this.goalPos[1]], {heuristic: astar.heuristics.closest});
+            let result = astar.search(obsArr, obsArr.grid[this.startPos[0]][this.startPos[1]], obsArr.grid[this.goalPos[0]][this.goalPos[1]], {heuristic: astar.heuristics.diagonal});
             
             for (let i = 0; i < result.length; i++) {
                 this.pathArr.push(Vector3.create(result[i].x / 7 - 12, 0.77, result[i].y / 7 - 12));
@@ -556,9 +561,12 @@ export class Team_Project extends Scene {
                 this.pathArr.shift();
             }
             this.robot.transform = desired.map((x,i) => Vector.from(this.robot.transform[i]).mix(x, 1));
+            let dest = Vector3.create(this.robot.transform[0][3], 0,this.robot.transform[2][3]);
+            this.drawnOnTexture(this.grassOcclusionTexture, this.grass_plane.shape.length, this.grass_plane.shape.width, dest, 8);
             if(this.pathArr.length < 14){
                 this.robotMov = false;
                 this.pathArr = [];
+                this.startPos = [Math.floor(7 * (dest[0] + 12)), Math.floor(7 * (dest[2] + 12))];
             }
         }
 
@@ -569,6 +577,8 @@ export class Team_Project extends Scene {
             }
         }
         this.grassOcclusionTexture.copy_onto_graphics_card(context.context, false);
+        
+        this.water_plane.material.cameraPosition = Vector3.create(program_state.camera_transform[0][3], program_state.camera_transform[1][3], program_state.camera_transform[2][3]);
 
         let projTransformStorage = program_state.projection_transform;
         let cameraStorage = program_state.camera_inverse;
