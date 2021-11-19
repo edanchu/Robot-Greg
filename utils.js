@@ -178,6 +178,7 @@ export class Custom_Movement_Controls extends defs.Movement_Controls{
         super();
         //a mouse object that we can query from our main program to get location and pressedness
         this.mouse = {"from_center": vec(0, 0), "isPainting": false};
+        this.dt = 0;
     }
 
     add_mouse_controls(canvas) {
@@ -216,17 +217,13 @@ export class Custom_Movement_Controls extends defs.Movement_Controls{
 
     make_control_panel() {
         this.control_panel.innerHTML += "Click and drag right mouse button to spin your viewpoint around it.<br>";
-        this.live_string(box => box.textContent = "- Position: " + this.pos[0].toFixed(2) + ", " + this.pos[1].toFixed(2)
-            + ", " + this.pos[2].toFixed(2));
         this.new_line();
-        this.live_string(box => box.textContent = "- Facing: " + ((this.z_axis[0] > 0 ? "West " : "East ")
-            + (this.z_axis[1] > 0 ? "Down " : "Up ") + (this.z_axis[2] > 0 ? "North" : "South")));
+        this.live_string(box => {
+            box.textContent = "FPS: " + (1 / (this.dt / 1000)).toFixed(1);
+        });
         this.new_line();
-        //added a live readout of the mouse's position from the center of the screen in pixel coordinates
-        //this.live_string(box => box.textContent = "- Mouse Pos: " + (this.mouse.from_center));
-        //this.new_line();
         this.new_line();
-
+        
         this.key_triggered_button("Up", [" "], () => this.thrust[1] = -1, undefined, () => this.thrust[1] = 0);
         this.key_triggered_button("Forward", ["w"], () => this.thrust[2] = 1, undefined, () => this.thrust[2] = 0);
         this.new_line();
@@ -235,29 +232,27 @@ export class Custom_Movement_Controls extends defs.Movement_Controls{
         this.key_triggered_button("Right", ["d"], () => this.thrust[0] = -1, undefined, () => this.thrust[0] = 0);
         this.new_line();
         this.key_triggered_button("Down", ["z"], () => this.thrust[1] = 1, undefined, () => this.thrust[1] = 0);
-
-        const speed_controls = this.control_panel.appendChild(document.createElement("span"));
-        speed_controls.style.margin = "30px";
-        this.key_triggered_button("-", ["o"], () =>
-            this.speed_multiplier /= 1.2, undefined, undefined, undefined, speed_controls);
-        this.live_string(box => {
-            box.textContent = "Speed: " + this.speed_multiplier.toFixed(2)
-        }, speed_controls);
-        this.key_triggered_button("+", ["p"], () =>
-            this.speed_multiplier *= 1.2, undefined, undefined, undefined, speed_controls);
-        this.new_line();
-        this.key_triggered_button("Roll left", [","], () => this.roll = 1, undefined, () => this.roll = 0);
-        this.key_triggered_button("Roll right", ["."], () => this.roll = -1, undefined, () => this.roll = 0);
-        this.new_line();
-        this.key_triggered_button("(Un)freeze mouse look around", ["f"], () => this.look_around_locked ^= 1, "#8B8885");
-        this.new_line();
-        //this.key_triggered_button("Go to world origin", ["r"], () => {
-        //    this.matrix().set_identity(4, 4);
-        //    this.inverse().set_identity(4, 4)
-        //}, "#8B8885");
-        //this.new_line();
-
+    }
+    
+    display(context, graphics_state, dt = graphics_state.animation_delta_time / 1000) {
+        const m = this.speed_multiplier * this.meters_per_frame,
+            r = this.speed_multiplier * this.radians_per_frame;
         
+        if (this.will_take_over_graphics_state) {
+            this.reset(graphics_state);
+            this.will_take_over_graphics_state = false;
+        }
+        
+        if (!this.mouse_enabled_canvases.has(context.canvas)) {
+            this.add_mouse_controls(context.canvas);
+            this.mouse_enabled_canvases.add(context.canvas)
+        }
+        this.first_person_flyaround(dt * r, dt * m);
+        if (this.mouse.anchor)
+            this.third_person_arcball(dt * r);
+        this.pos = this.inverse().times(vec4(0, 0, 0, 1));
+        this.z_axis = this.inverse().times(vec4(0, 0, 1, 0));
+        this.dt = graphics_state.animation_delta_time;
     }
 }
 
