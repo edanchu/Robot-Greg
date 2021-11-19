@@ -310,6 +310,8 @@ export class Team_Project extends Scene {
         this.waterDerivativeHeight = new Texture("assets/textures/water_derivative_height.png");
         this.waterNormal = new Texture("assets/textures/water_normal.png");
         this.waterFlowMap = new Texture("assets/textures/flow_speed_noise.png");
+        this.grassCoarseTexture = new Texture("assets/noise/grainy.png", "LINEAR");
+        this.grassBroadTexture = new Texture("assets/noise/perlin.png", "LINEAR");
         
         this.shapes = {
             'axis' : new defs.Axis_Arrows(),
@@ -332,17 +334,14 @@ export class Team_Project extends Scene {
         this.placeGoal = false;
         
         //grass vars
-        this.grass_color = hex_color("#2d8f06");
-        this.ground_color = hex_color("#556208");
-        
-        this.cameraPosition = [];
+        this.grass_color = hex_color("#118c03");
         
         //variables to deal with light and shadows
         this.lightDepthTextureSize = (this.performanceMode) ? (this.uberPerformanceMode ? 1024 : 2048) : 4096;
         this.light_position = vec4(23, 20, -23, 0);
-        this.light_color = color(5,5,5,0);
+        this.light_color = color(0.8,0.86,1,0);
         this.light_view_target = vec4(0, 0, 0, 1);
-        this.light_field_of_view = 130 * Math.PI / 180;
+        this.light_field_of_view = 120 * Math.PI / 180;
         this.light_view_mat = Mat4.look_at(
             vec3(this.light_position[0], this.light_position[1], this.light_position[2]),
             vec3(this.light_view_target[0], this.light_view_target[1], this.light_view_target[2]),
@@ -356,37 +355,37 @@ export class Team_Project extends Scene {
                 light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat}),
             plain: new Material(new PlainShader()),
 
-            rock: new Material(new Shadow_Textured_Phong_Maps(), {color_texture: this.rockDiffuseTexture, specular_texture: this.rockSpecularTexture, normal_texture: this.rockNormalTexture, ambient: 0.4, specularity: 0.3, diffusivity: 0.3, smoothness: 1,
+            rock: new Material(new Shadow_Textured_Phong_Maps(), {color_texture: this.rockDiffuseTexture, specular_texture: this.rockSpecularTexture, normal_texture: this.rockNormalTexture, ambient: 0.4, specularity: 0.1, diffusivity: 1.84, smoothness: 34,
                 light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat}),
-            tree: new Material(new Shadow_Textured_Phong_Maps(), {color_texture: this.treeDiffuseTexture, specular_texture: this.treeSpecularTexture, normal_texture: this.treeNormalTexture, ambient: 0.4, specularity: 0.3, diffusivity: 0.45, smoothness: 5,
+            tree: new Material(new Shadow_Textured_Phong_Maps(), {color_texture: this.treeDiffuseTexture, specular_texture: this.treeSpecularTexture, normal_texture: this.treeNormalTexture, ambient: 0.5, specularity: 0.3, diffusivity: 2.84, smoothness: 5,
                 light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat}),
         };
 
         //create the background grass plane. low density since we aren't deforming it
-        this.background_grass_plane = new Scene_Object(new Triangle_Strip_Plane(20, 20, Vector3.create(0,0,0), 2),
-            Mat4.scale(5,1,5), new Material(new Grass_Shader_Background_Shadow(0), {grass_color: this.grass_color, ground_color: this.ground_color, ground_texture: this.grassGroundTexture,
-                ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100, fake_shadow_layer: false,
+        this.background_grass_plane = new Scene_Object(new Triangle_Strip_Plane(20, 20, Vector3.create(0,0,0), 5),
+            Mat4.scale(5,1,5), new Material(new Grass_Shader_Background_Shadow(0), {grass_color: this.grass_color, ground_texture: this.grassGroundTexture,
+                ambient: 0.2, diffusivity: 2.0, specularity:  0.5, smoothness: 30, grass_broad_texture: this.grassBroadTexture, grass_coarse_texture: this.grassCoarseTexture,
+                light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat}), "TRIANGLE_STRIP");
+    
+        //the main grass plane has a higher density since we want the deformation to look smooth
+        this.grass_plane = new Scene_Object(new Triangle_Strip_Plane(26, 26, Vector3.create(0,0,0), 7),
+            Mat4.translation(0,0,0), new Material(new Grass_Shader_Shadow(0), {grass_color: this.grass_color, ground_texture: this.grassGroundTexture,
+                texture: this.grassOcclusionTexture, ambient: 0.2, diffusivity: 2.0, specularity: 0.5, smoothness: 30, grass_broad_texture: this.grassBroadTexture, grass_coarse_texture: this.grassCoarseTexture,
                 light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat}), "TRIANGLE_STRIP");
 
         this.water_plane = new Scene_Object(new Triangle_Strip_Plane(26,26, Vector3.create(0,0,0), 7), Mat4.translation(0,-0.7,0),
             new Material(new Water_Shader(), {shallow_color: hex_color("#00ffe8"), deep_color: hex_color("#052a44"), ambient: 0.0, diffusivity: 1.0, specularity: 0.025, smoothness: 1,
-            depth_texture: null, bg_color_texture: null, water_normal: this.waterNormal, derivative_height: this.waterDerivativeHeight, water_flow: this.waterFlowMap,
-            camera_position: this.cameraPosition}), "TRIANGLE_STRIP");
-
-        //the main grass plane has a higher density since we want the deformation to look smooth
-        this.grass_plane = new Scene_Object(new Triangle_Strip_Plane(26, 26, Vector3.create(0,0,0), 7),
-            Mat4.translation(0,0,0), new Material(new Grass_Shader_Shadow(0), {grass_color: this.grass_color, ground_color: this.ground_color, ground_texture: this.grassGroundTexture,
-                texture: this.grassOcclusionTexture, ambient: 0.2, diffusivity: 0.3, specularity: 0.032, smoothness: 100, fake_shadow_layer: false,
-                light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat}), "TRIANGLE_STRIP");
+            depth_texture: null, bg_color_texture: null, water_normal: this.waterNormal, derivative_height: this.waterDerivativeHeight, water_flow: this.waterFlowMap}), "TRIANGLE_STRIP");
+        
         
         //the skybox is just a sphere with the shader that makes the color look vaguely like sky above. We put everything inside this sphere
         this.skybox = new Scene_Object(new defs.Subdivision_Sphere(4), Mat4.scale(80, 80,80),
             new Material(new Skybox_Shader(), {top_color: hex_color("#268b9a"), mid_color: hex_color("#d1eaf6"), bottom_color: hex_color("#3d8f2b"), light_position: this.light_position}));
 
-        this.robot = new Scene_Object(this.shapes.robot, Mat4.translation(-500, -500, -500), new Material(new Shadow_Textured_Phong(), {ambient: 0.4, diffusivity: 0.2, specularity: 0.05, smoothness: 1, color_texture: this.robotTexture,
+        this.robot = new Scene_Object(this.shapes.robot, Mat4.translation(-500, -500, -500), new Material(new Shadow_Textured_Phong(), {ambient: 0.4, diffusivity: 1.84, specularity: 0.5, smoothness: 34, color_texture: this.robotTexture,
                 light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat}));
     
-        this.goal = new Scene_Object(this.shapes.robot, Mat4.translation(-500, -500, -500), new Material(new Shadow_Textured_Phong(), {ambient: 0.4, diffusivity: 0.2, specularity: 0.05, smoothness: 1, color_texture: this.goalTexture,
+        this.goal = new Scene_Object(this.shapes.robot, Mat4.translation(-500, -500, -500), new Material(new Shadow_Textured_Phong(), {ambient: 0.4, diffusivity: 1.84, specularity: 0.5, smoothness: 34, color_texture: this.goalTexture,
             light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat}))
 
         this.pathArr = [];
@@ -419,7 +418,7 @@ export class Team_Project extends Scene {
         if(drawWater) {
             this.background_grass_plane.material.light_depth_texture = this.lightDepthTexture;
             this.background_grass_plane.material.draw_shadow = true;
-            let bglayers = this.performanceMode ? 1 : 12;
+            let bglayers = this.performanceMode ? 1 : 18;
             for (let i = 0; i < bglayers; i += 2) {
                 this.background_grass_plane.material.shader.layer = i;
                 this.background_grass_plane.drawObject(context, program_state);
@@ -465,8 +464,8 @@ export class Team_Project extends Scene {
         this.background_grass_plane.material.draw_shadow = false;
         this.grass_plane.material.draw_shadow = false;
         
-        let bglayers = this.performanceMode ? 1:12;
-        for (let i = 0; i < bglayers; i+= 3) {
+        let bglayers = this.performanceMode ? 1:14;
+        for (let i = 0; i < bglayers; i+= 2) {
             this.background_grass_plane.material.shader.layer = i;
             this.background_grass_plane.drawObject(context, program_state);
         }
@@ -534,11 +533,10 @@ export class Team_Project extends Scene {
                 this.goal.transform = Mat4.translation(dest[0], 0.77 + dest[1], dest[2]).times(Mat4.rotation(Math.PI, 0, 1, 0));
                 this.goalPos = [Math.floor(7 * (dest[0] + 12)), Math.floor(7 * (dest[2] + 12))];
             }
-
         }
         if (this.solveMaze === true) {
             let obsArr = new Graph(this.obstacleArr);
-            let result = astar.search(obsArr, obsArr.grid[this.startPos[0]][this.startPos[1]], obsArr.grid[this.goalPos[0]][this.goalPos[1]], {heuristic: astar.heuristics.diagonal});
+            let result = astar.search(obsArr, obsArr.grid[this.startPos[0]][this.startPos[1]], obsArr.grid[this.goalPos[0]][this.goalPos[1]], {heuristic: astar.heuristics.manhattan});
             
             for (let i = 0; i < result.length; i++) {
                 this.pathArr.push(Vector3.create(result[i].x / 7 - 12, 0.77, result[i].y / 7 - 12));
@@ -578,8 +576,6 @@ export class Team_Project extends Scene {
         }
         this.grassOcclusionTexture.copy_onto_graphics_card(context.context, false);
         
-        this.water_plane.material.cameraPosition = Vector3.create(program_state.camera_transform[0][3], program_state.camera_transform[1][3], program_state.camera_transform[2][3]);
-
         let projTransformStorage = program_state.projection_transform;
         let cameraStorage = program_state.camera_inverse;
         

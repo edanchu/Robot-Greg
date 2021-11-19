@@ -95,28 +95,26 @@ export class Grass_Shader_Shadow extends Shader {
     update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
         const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform], PCM = P.times(C).times(M);
         context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
-        context.uniform4fv(gpu_addresses.ground_color, material.ground_color);
+        context.uniformMatrix4fv(gpu_addresses.inv_transpose_model_transform, false, Matrix.flatten_2D_to_1D(Mat4.inverse(model_transform)));
         context.uniform4fv(gpu_addresses.grass_color, material.grass_color);
         context.uniform1i(gpu_addresses.ground_texture, 3);
         material.ground_texture.activate(context, 3);
+        context.uniform1i(gpu_addresses.grass_coarse_texture, 4);
+        material.grass_coarse_texture.activate(context, 4);
+        context.uniform1i(gpu_addresses.grass_broad_texture, 5);
+        material.grass_broad_texture.activate(context, 5);
 
         context.uniform1f(gpu_addresses.time, graphics_state.animation_time / 1000.0);
         context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform.transposed()));
         context.uniform1f(gpu_addresses.layer, this.layer);
         context.uniform1i(gpu_addresses.texture, 0);
         material.texture.activate(context, 0);
-        context.uniform1i(gpu_addresses.fake_shadow_layer, material.fake_shadow_layer);
         context.uniform1f(gpu_addresses.ambient, material.ambient);
         context.uniform1f(gpu_addresses.diffusivity, material.diffusivity);
         context.uniform1f(gpu_addresses.specularity, material.specularity);
         context.uniform1f(gpu_addresses.smoothness, material.smoothness);
         const O = vec4(0, 0, 0, 1), camera_center = graphics_state.camera_transform.times(O).to3();
         context.uniform3fv(gpu_addresses.camera_center, camera_center);
-        const squared_scale = model_transform.reduce(
-            (acc, r) => {
-                return acc.plus(vec4(...r).times_pairwise(r))
-            }, vec4(0, 0, 0, 0)).to3();
-        context.uniform3fv(gpu_addresses.squared_scale, squared_scale);
 
         if (!graphics_state.lights.length)
             return;
@@ -133,7 +131,7 @@ export class Grass_Shader_Shadow extends Shader {
         context.uniformMatrix4fv(gpu_addresses.light_view_mat, false, Matrix.flatten_2D_to_1D(material.light_view_mat.transposed()));
         context.uniformMatrix4fv(gpu_addresses.light_proj_mat, false, Matrix.flatten_2D_to_1D(material.light_proj_mat.transposed()));
         context.uniform1i(gpu_addresses.draw_shadow, material.draw_shadow);
-        context.uniform1f(gpu_addresses.light_depth_bias, 0.5);
+        context.uniform1f(gpu_addresses.light_depth_bias, 0.35);
         context.uniform1f(gpu_addresses.light_texture_size, material.lightDepthTextureSize);
         context.uniform1i(gpu_addresses.light_depth_texture, 1);
         if (material.draw_shadow === true) {
@@ -199,8 +197,7 @@ export class Grass_Shader_Shadow extends Shader {
                 uniform float ambient, diffusivity, specularity, smoothness;
                 uniform vec4 light_positions_or_vectors[N_LIGHTS], light_colors[N_LIGHTS];
                 uniform float light_attenuation_factors[N_LIGHTS];
-                uniform vec3 squared_scale, camera_center;
-                uniform vec4 ground_color;
+                uniform vec3 camera_center;
                 uniform vec4 grass_color;
         
                 varying vec3 N, vertex_worldspace;
@@ -250,13 +247,14 @@ export class Grass_Shader_Shadow extends Shader {
                 attribute vec3 normal;                       
                 uniform mat4 projection_camera_model_transform;
                 uniform mat4 model_transform;
+                uniform mat4 inv_transpose_model_transform;
                 
                 void main(){
                     worldPos = model_transform * vec4(position, 1.0);
                     float alpha = (layer / 10.0) * PerlinNoise3Pass(worldPos.xz + vec2(time * 1.5, time * 1.5), 2.0);
                     gl_Position = projection_camera_model_transform * vec4(position.x + (0.2 * alpha), position.y + (0.04 * layer), position.z + (0.2 * alpha), 1.0);
                     f_tex_coord = texture_coord;
-                    N = normalize( mat3( model_transform ) * normal / squared_scale);
+                    N =  normalize((inv_transpose_model_transform * vec4(normal, 0.0)).xyz);
                     vertex_worldspace = (model_transform * vec4( position, 1.0 )).xyz;
                 }`;
     }
@@ -269,7 +267,8 @@ export class Grass_Shader_Shadow extends Shader {
                 uniform mat4 light_proj_mat;
                 uniform float light_depth_bias;
                 uniform bool draw_shadow;
-                uniform bool fake_shadow_layer;
+                uniform sampler2D grass_coarse_texture;
+                uniform sampler2D grass_broad_texture;
                 
                 float linearDepth(float val){
                     val = 2.0 * val - 1.0;
@@ -293,20 +292,6 @@ export class Grass_Shader_Shadow extends Shader {
         
                 void main(){
                     vec4 groundTexColor = texture2D(ground_texture, f_tex_coord * 60.0);
-                    if (fake_shadow_layer){
-                        float perlin = 1.0 - (1.0 - PerlinNoise3Pass(vec2(worldPos.x + 0.02, worldPos.z - 0.02), 50.0)) * 2.4;
-                        float white = 1.0 - (1.0 - perlinNoise(vec2(worldPos.x + 0.02, worldPos.z - 0.02))) * 40.0;
-                        float alpha = perlin * white - ((layer + 0.2) * 2.2 / 1.0);
-                        if (alpha < 0.0 || worldPos.y < -1.0){
-                            discard;
-                        }
-                        gl_FragColor = vec4(grass_color.x * ambient * 2.35 + (layer / 200.0), grass_color.y * ambient * 2.35 + (layer / 200.0), grass_color.z * ambient * 2.35 + (layer / 200.0), 1.0);
-                        vec4 tex_color = texture2D(texture, f_tex_coord);
-                        if (tex_color.r > 0.0){
-                            discard;
-                        }
-                    }
-                    else {
                     if (layer > 0.0){
                         gl_FragColor = vec4(grass_color.x * ambient + (layer / 70.0), grass_color.y * ambient + (layer / 70.0), grass_color.z * ambient + (layer / 70.0), 1.0);
                     }
@@ -340,17 +325,28 @@ export class Grass_Shader_Shadow extends Shader {
                     gl_FragColor.xyz += diffuse + specular;
                     
                     if (layer > 0.0){
-                        float perlin = 1.0 - (1.0 - PerlinNoise3Pass(worldPos.xz, 50.0)) * 2.2;
-                        float white = 1.0 - (1.0 - perlinNoise(worldPos.xz)) * 40.0;
-                        float alpha = perlin * white - ((layer + 0.2) * 1.2 / 1.0);
+                        // float perlin = 1.0 - (1.0 - PerlinNoise3Pass(worldPos.xz, 50.0)) * 2.2;
+                        // float white = 1.0 - (1.0 - perlinNoise(worldPos.xz)) * 40.0;
+                        // float alpha = perlin * white - ((layer + 0.2) * 1.2 / 1.0);
+                        // if (alpha < 0.0 || worldPos.y < -1.0){
+                        //     discard;
+                        // }
+                        
+                        float coarse = texture2D(grass_coarse_texture, f_tex_coord / 1.2).x * 2.0 - 1.1;
+                        float broad = texture2D(grass_broad_texture, f_tex_coord * 3.0).x * 2.0 - 1.0;
+                        coarse = coarse * 1.2;
+                        broad = 1.0 - (1.0 - perlinNoise(worldPos.xz)) * 40.0;
+                        
+                        float alpha =  broad * coarse - ((layer + 0.2) * 1.2 / 1.0);
+                        
                         if (alpha < 0.0 || worldPos.y < -1.0){
-                            discard;
+                             discard;
                         }
+                        
                         vec4 tex_color = texture2D(texture, f_tex_coord);
                         if (tex_color.r > 0.0){
                             discard;
                         }
-                    }
                     }
                 }`;
     }
@@ -366,14 +362,17 @@ export class Grass_Shader_Background_Shadow extends Shader {
     update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
         const [P, C, M] = [graphics_state.projection_transform, graphics_state.camera_inverse, model_transform], PCM = P.times(C).times(M);
         context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
-        context.uniform4fv(gpu_addresses.ground_color, material.ground_color);
+        context.uniformMatrix4fv(gpu_addresses.inv_transpose_model_transform, false, Matrix.flatten_2D_to_1D(Mat4.inverse(model_transform)));
         context.uniform4fv(gpu_addresses.grass_color, material.grass_color);
         context.uniform1f(gpu_addresses.time, graphics_state.animation_time / 1000.0);
         context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform.transposed()));
         context.uniform1f(gpu_addresses.layer, this.layer);
-        context.uniform1i(gpu_addresses.fake_shadow_layer, material.fake_shadow_layer);
-        context.uniform1i(gpu_addresses.ground_texture, 4);
-        material.ground_texture.activate(context, 4);
+        context.uniform1i(gpu_addresses.ground_texture, 3);
+        material.ground_texture.activate(context, 3);
+        context.uniform1i(gpu_addresses.grass_coarse_texture, 4);
+        material.grass_coarse_texture.activate(context, 4);
+        context.uniform1i(gpu_addresses.grass_broad_texture, 5);
+        material.grass_broad_texture.activate(context, 5);
 
         context.uniform1f(gpu_addresses.ambient, material.ambient);
         context.uniform1f(gpu_addresses.diffusivity, material.diffusivity);
@@ -381,11 +380,6 @@ export class Grass_Shader_Background_Shadow extends Shader {
         context.uniform1f(gpu_addresses.smoothness, material.smoothness);
         const O = vec4(0, 0, 0, 1), camera_center = graphics_state.camera_transform.times(O).to3();
         context.uniform3fv(gpu_addresses.camera_center, camera_center);
-        const squared_scale = model_transform.reduce(
-            (acc, r) => {
-                return acc.plus(vec4(...r).times_pairwise(r))
-            }, vec4(0, 0, 0, 0)).to3();
-        context.uniform3fv(gpu_addresses.squared_scale, squared_scale);
 
         if (!graphics_state.lights.length)
             return;
@@ -402,7 +396,7 @@ export class Grass_Shader_Background_Shadow extends Shader {
         context.uniformMatrix4fv(gpu_addresses.light_view_mat, false, Matrix.flatten_2D_to_1D(material.light_view_mat.transposed()));
         context.uniformMatrix4fv(gpu_addresses.light_proj_mat, false, Matrix.flatten_2D_to_1D(material.light_proj_mat.transposed()));
         context.uniform1i(gpu_addresses.draw_shadow, material.draw_shadow);
-        context.uniform1f(gpu_addresses.light_depth_bias, 0.3);
+        context.uniform1f(gpu_addresses.light_depth_bias, 0.35);
         context.uniform1f(gpu_addresses.light_texture_size, material.lightDepthTextureSize);
         context.uniform1i(gpu_addresses.light_depth_texture, 1);
         if (material.draw_shadow === true) {
@@ -467,8 +461,7 @@ export class Grass_Shader_Background_Shadow extends Shader {
                 uniform float ambient, diffusivity, specularity, smoothness;
                 uniform vec4 light_positions_or_vectors[N_LIGHTS], light_colors[N_LIGHTS];
                 uniform float light_attenuation_factors[N_LIGHTS];
-                uniform vec3 squared_scale, camera_center;
-                uniform vec4 ground_color;
+                uniform vec3 camera_center;
                 uniform vec4 grass_color;
         
                 varying vec3 N, vertex_worldspace;
@@ -518,12 +511,13 @@ export class Grass_Shader_Background_Shadow extends Shader {
                 attribute vec2 texture_coord;
                 uniform mat4 projection_camera_model_transform;
                 uniform mat4 model_transform;
+                uniform mat4 inv_transpose_model_transform;
                 
                 void main(){
                     worldPos = model_transform * vec4(position, 1.0);
                     float alpha = (layer / 10.0) * PerlinNoise3Pass(worldPos.xz + vec2(time * 1.5, time * 1.5), 2.0);
                     gl_Position = projection_camera_model_transform * vec4(position.x + (0.02 * alpha), position.y + (0.04 * layer), position.z + (0.02 * alpha), 1.0);
-                    N = normalize( mat3( model_transform ) * normal / squared_scale);
+                    N =  normalize(inv_transpose_model_transform * vec4(normal, 0.0)).xyz;
                     vertex_worldspace = (model_transform * vec4( position, 1.0 )).xyz;
                     f_tex_coord = texture_coord;
                     
@@ -538,7 +532,8 @@ export class Grass_Shader_Background_Shadow extends Shader {
                 uniform mat4 light_proj_mat;
                 uniform float light_depth_bias;
                 uniform bool draw_shadow;
-                uniform bool fake_shadow_layer;
+                uniform sampler2D grass_coarse_texture;
+                uniform sampler2D grass_broad_texture;
                 
                 float linearDepth(float val){
                     val = 2.0 * val - 1.0;
@@ -565,16 +560,6 @@ export class Grass_Shader_Background_Shadow extends Shader {
                         discard;
                     }
                     vec4 groundTexColor = texture2D(ground_texture, f_tex_coord * 60.0);
-                    if (fake_shadow_layer){
-                        float perlin = 1.0 - (1.0 - PerlinNoise3Pass(vec2(worldPos.x + 0.02, worldPos.z - 0.02), 50.0)) * 2.4;
-                        float white = 1.0 - (1.0 - perlinNoise(vec2(worldPos.x + 0.02, worldPos.z - 0.02))) * 40.0;
-                        float alpha = perlin * white - ((layer + 0.2) * 2.2 / 1.0);
-                        if (alpha < 0.0 || worldPos.y < -0.7){
-                            discard;
-                        }
-                        gl_FragColor = gl_FragColor = vec4(grass_color.x * ambient * 2.35 + (layer / 200.0), grass_color.y * ambient * 2.35 + (layer / 200.0), grass_color.z * ambient * 2.35 + (layer / 200.0), 1.0 - exp(-0.5 * (40.0 - distance(vec4(0,0,0,0), worldPos))));
-                    }
-                    else{
                     if (layer > 0.0){
                         gl_FragColor = vec4(grass_color.x * ambient + (layer / 70.0), grass_color.y * ambient + (layer / 70.0), grass_color.z * ambient + (layer / 70.0), 1.0 - exp(-0.5 * (40.0 - distance(vec4(0,0,0,0), worldPos))));
                     }
@@ -608,13 +593,23 @@ export class Grass_Shader_Background_Shadow extends Shader {
                     gl_FragColor.xyz += diffuse + specular;
 
                     if (layer > 0.0){
-                        float perlin = 1.0 - (1.0 - PerlinNoise3Pass(worldPos.xz, 50.0)) * 2.2;
-                        float white = 1.0 - (1.0 - perlinNoise(worldPos.xz)) * 40.0;
-                        float alpha = perlin * white - ((layer + 0.2) * 1.2 / 1.0);
+                        // float perlin = 1.0 - (1.0 - PerlinNoise3Pass(worldPos.xz, 50.0)) * 2.2;
+                        // float white = 1.0 - (1.0 - perlinNoise(worldPos.xz)) * 40.0;
+                        // float alpha = perlin * white - ((layer + 0.2) * 1.2 / 1.0);
+                        // if (alpha < 0.0 || worldPos.y < -1.0){
+                        //     discard;
+                        // }
+                        
+                        float coarse = texture2D(grass_coarse_texture, 5.0 * f_tex_coord / 1.2).x * 2.0 - 1.1;
+                        float broad = texture2D(grass_broad_texture, f_tex_coord * 3.0).x * 2.0 - 1.0;
+                        coarse = coarse * 1.2;
+                        broad = 1.0 - (1.0 - perlinNoise(worldPos.xz)) * 40.0;
+                        
+                        float alpha =  broad * coarse - ((layer + 0.2) * 1.2 / 1.0);
+                        
                         if (alpha < 0.0 || worldPos.y < -1.0){
-                            discard;
+                             discard;
                         }
-                    }
                     }
                 }`;
     }
@@ -633,10 +628,7 @@ export class Water_Shader extends Shader{
         context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform.transposed()));
         context.uniformMatrix4fv(gpu_addresses.inv_transpose_model_transform, false, Matrix.flatten_2D_to_1D(Mat4.inverse(model_transform)));
         context.uniformMatrix4fv(gpu_addresses.view_matrix, false, Matrix.flatten_2D_to_1D(graphics_state.camera_inverse.transposed()));
-        context.uniformMatrix4fv(gpu_addresses.inv_transpose_view_matrix, false, Matrix.flatten_2D_to_1D(Mat4.inverse(graphics_state.camera_inverse)));
-        context.uniformMatrix4fv(gpu_addresses.proj_to_view, false, Matrix.flatten_2D_to_1D(Mat4.inverse(graphics_state.projection_transform).transposed()));
         context.uniformMatrix4fv(gpu_addresses.proj_matrix, false, Matrix.flatten_2D_to_1D(graphics_state.projection_transform.transposed()));
-        context.uniform3fv(gpu_addresses.camera_position, material.camera_position);
         context.uniform1f(gpu_addresses.time, graphics_state.animation_time / 1000);
         context.uniform4fv(gpu_addresses.shallow_color, material.shallow_color);
         context.uniform4fv(gpu_addresses.deep_color, material.deep_color);
@@ -646,11 +638,6 @@ export class Water_Shader extends Shader{
         context.uniform1f(gpu_addresses.smoothness, material.smoothness);
         const O = vec4(0, 0, 0, 1), camera_center = graphics_state.camera_transform.times(O).to3();
         context.uniform3fv(gpu_addresses.camera_center, camera_center);
-        const squared_scale = model_transform.reduce(
-            (acc, r) => {
-                return acc.plus(vec4(...r).times_pairwise(r))
-            }, vec4(0, 0, 0, 0)).to3();
-        context.uniform3fv(gpu_addresses.squared_scale, squared_scale);
 
         if (!graphics_state.lights.length)
             return;
@@ -687,7 +674,7 @@ export class Water_Shader extends Shader{
                 uniform float ambient, diffusivity, specularity, smoothness;
                 uniform vec4 light_positions_or_vectors[N_LIGHTS], light_colors[N_LIGHTS];
                 uniform float light_attenuation_factors[N_LIGHTS];
-                uniform vec3 squared_scale, camera_center;
+                uniform vec3 camera_center;
                 uniform vec4 shallow_color;
                 uniform vec4 deep_color;
                 varying vec2 f_texture_coord;
@@ -809,12 +796,14 @@ export class Water_Shader extends Shader{
                 uniform mat4 model_transform;
                 uniform mat4 view_matrix;
                 varying vec3 vertex_viewspace;
+                uniform mat4 inv_transpose_view_matrix;
+                uniform mat4 inv_transpose_model_transform;
                 
                 void main(){
                     vertex_worldspace = (model_transform * vec4( position, 1.0 )).xyz;
                     vertex_viewspace = (view_matrix * model_transform * vec4( position, 1.0 )).xyz;
                     gl_Position = projection_camera_model_transform * vec4( position, 1.0 );
-                    N = normalize( mat3( model_transform ) * normalize(normal) / squared_scale);
+                    N =  normalize(inv_transpose_view_matrix * inv_transpose_model_transform * vec4(normal, 0.0)).xyz;
                     f_texture_coord = texture_coord;
                 }`;
     }
@@ -827,10 +816,8 @@ export class Water_Shader extends Shader{
                 uniform sampler2D water_flow;
                 uniform sampler2D water_normal;
                 uniform sampler2D derivative_height;
-                uniform mat4 proj_to_view;
                 uniform mat4 proj_matrix;
                 uniform mat4 model_transform;
-                uniform vec3 camera_position;
                 uniform mat4 view_matrix;
                 varying vec3 vertex_viewspace;
                 uniform mat4 inv_transpose_view_matrix;
@@ -953,6 +940,7 @@ export class Shadow_Textured_Phong extends Shader {
 
         context.uniform1f(gpu_addresses.time, graphics_state.animation_time / 1000.0);
         context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform.transposed()));
+        context.uniformMatrix4fv(gpu_addresses.inv_transpose_model_transform, false, Matrix.flatten_2D_to_1D(Mat4.inverse(model_transform)));
         context.uniform1i(gpu_addresses.color_texture, 0);
         material.color_texture.activate(context, 0);
 
@@ -962,11 +950,6 @@ export class Shadow_Textured_Phong extends Shader {
         context.uniform1f(gpu_addresses.smoothness, material.smoothness);
         const O = vec4(0, 0, 0, 1), camera_center = graphics_state.camera_transform.times(O).to3();
         context.uniform3fv(gpu_addresses.camera_center, camera_center);
-        const squared_scale = model_transform.reduce(
-            (acc, r) => {
-                return acc.plus(vec4(...r).times_pairwise(r))
-            }, vec4(0, 0, 0, 0)).to3();
-        context.uniform3fv(gpu_addresses.squared_scale, squared_scale);
 
         if (!graphics_state.lights.length)
             return;
@@ -1003,7 +986,7 @@ export class Shadow_Textured_Phong extends Shader {
                 uniform float ambient, diffusivity, specularity, smoothness;
                 uniform vec4 light_positions_or_vectors[N_LIGHTS], light_colors[N_LIGHTS];
                 uniform float light_attenuation_factors[N_LIGHTS];
-                uniform vec3 squared_scale, camera_center;
+                uniform vec3 camera_center;
         
                 varying vec3 N, vertex_worldspace;
                 vec3 phong_model_lights( vec3 N, vec3 vertex_worldspace, 
@@ -1042,11 +1025,12 @@ export class Shadow_Textured_Phong extends Shader {
                 attribute vec3 normal;                       
                 uniform mat4 projection_camera_model_transform;
                 uniform mat4 model_transform;
+                uniform mat4 inv_transpose_model_transform;
                 
                 void main(){
                     gl_Position = projection_camera_model_transform * vec4(position, 1.0);
                     f_tex_coord = texture_coord;
-                    N = normalize( mat3( model_transform ) * normal / squared_scale);
+                    N =  normalize(inv_transpose_model_transform * vec4(normal, 0.0)).xyz;
                     vertex_worldspace = (model_transform * vec4( position, 1.0 )).xyz;
                 }`;
     }
@@ -1126,6 +1110,7 @@ export class Shadow_Textured_Phong_Maps extends Shader{
 
         context.uniform1f(gpu_addresses.time, graphics_state.animation_time / 1000.0);
         context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform.transposed()));
+        context.uniformMatrix4fv(gpu_addresses.inv_transpose_model_transform, false, Matrix.flatten_2D_to_1D(Mat4.inverse(model_transform)));
         context.uniform1i(gpu_addresses.color_texture, 0);
         material.color_texture.activate(context, 0);
 
@@ -1147,11 +1132,6 @@ export class Shadow_Textured_Phong_Maps extends Shader{
         context.uniform1f(gpu_addresses.smoothness, material.smoothness);
         const O = vec4(0, 0, 0, 1), camera_center = graphics_state.camera_transform.times(O).to3();
         context.uniform3fv(gpu_addresses.camera_center, camera_center);
-        const squared_scale = model_transform.reduce(
-            (acc, r) => {
-                return acc.plus(vec4(...r).times_pairwise(r))
-            }, vec4(0, 0, 0, 0)).to3();
-        context.uniform3fv(gpu_addresses.squared_scale, squared_scale);
 
         if (!graphics_state.lights.length)
             return;
@@ -1194,7 +1174,7 @@ export class Shadow_Textured_Phong_Maps extends Shader{
                 uniform float ambient, diffusivity, specularity, smoothness;
                 uniform vec4 light_positions_or_vectors[N_LIGHTS], light_colors[N_LIGHTS];
                 uniform float light_attenuation_factors[N_LIGHTS];
-                uniform vec3 squared_scale, camera_center;
+                uniform vec3 camera_center;
         
                 varying vec3 N, vertex_worldspace;
                 vec3 phong_model_lights( vec3 N, vec3 vertex_worldspace, vec2 f_tex_coord, sampler2D specular_texture, sampler2D color_texture, out vec3 light_diffuse_contribution, out vec3 light_specular_contribution ){
@@ -1234,11 +1214,12 @@ export class Shadow_Textured_Phong_Maps extends Shader{
                 attribute vec3 tangent;
                 uniform mat4 projection_camera_model_transform;
                 uniform mat4 model_transform;
+                uniform mat4 inv_transpose_model_transform;
                 
                 void main(){
                     gl_Position = projection_camera_model_transform * vec4(position, 1.0);
                     f_tex_coord = texture_coord;
-                    N = normalize( mat3( model_transform ) * normal / squared_scale);
+                    N =  normalize(inv_transpose_model_transform * vec4(normal, 0.0)).xyz;
                     vertex_worldspace = (model_transform * vec4( position, 1.0 )).xyz;
                     vec3 BiTangent = cross(normal, tangent);
                     tbn = mat3(normalize(vec3(model_transform * vec4(tangent, 0.0))), normalize(vec3(model_transform * vec4(BiTangent, 0.0))), normalize(vec3(model_transform * vec4(normal, 0.0))));
