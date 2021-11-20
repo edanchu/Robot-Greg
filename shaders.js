@@ -103,6 +103,8 @@ export class Grass_Shader_Shadow extends Shader {
         material.grass_coarse_texture.activate(context, 4);
         context.uniform1i(gpu_addresses.grass_broad_texture, 5);
         material.grass_broad_texture.activate(context, 5);
+        context.uniform1i(gpu_addresses.underwater_texture, 6);
+        material.underwater_texture.activate(context, 6);
         context.uniform1i(gpu_addresses.lush_grass, material.lush_grass);
 
         context.uniform1f(gpu_addresses.time, graphics_state.animation_time / 1000.0);
@@ -149,6 +151,7 @@ export class Grass_Shader_Shadow extends Shader {
                 
                 uniform sampler2D texture;
                 uniform sampler2D ground_texture;
+                uniform sampler2D underwater_texture;
                 varying vec2 f_tex_coord;
                 
                 float random (vec2 value){
@@ -203,10 +206,10 @@ export class Grass_Shader_Shadow extends Shader {
         
                 varying vec3 N, vertex_worldspace;
                 
-                vec3 triPlanar(vec3 N, vec3 vertex_worldspace){
-                    vec3 x = texture2D(ground_texture, vertex_worldspace.zy / 2.0).xyz;
-                    vec3 y = texture2D(ground_texture, vertex_worldspace.xz / 2.0).xyz;
-                    vec3 z = texture2D(ground_texture, vertex_worldspace.xy / 2.0).xyz;
+                vec3 triPlanar(vec3 N, vec3 vertex_worldspace, sampler2D texture){
+                    vec3 x = texture2D(texture, vertex_worldspace.zy / 2.0).xyz;
+                    vec3 y = texture2D(texture, vertex_worldspace.xz / 2.0).xyz;
+                    vec3 z = texture2D(texture, vertex_worldspace.xy / 2.0).xyz;
                     vec3 normal = normalize(abs(N));
                     vec3 normalWeight = normal / (normal.x + normal.y + normal.z);
                     return normalWeight.x * x + normalWeight.y * y + normalWeight.z * z;
@@ -237,9 +240,10 @@ export class Grass_Shader_Shadow extends Shader {
                             light_specular_contribution += attenuation * grass_color.xyz * specularity * specular;
                         }
                         else{
-                            vec4 groundTexColor = vec4(triPlanar(N, vertex_worldspace), 1.0);
-                            light_contribution = groundTexColor.xyz * light_colors[i].xyz * diffusivity * diffuse
-                                                                  + light_colors[i].xyz * specularity * specular;
+                            vec4 dirtTexColor = vec4(triPlanar(N, vertex_worldspace, ground_texture), 1.0);
+                            vec4 underwaterTexColor = vec4(triPlanar(N, vertex_worldspace / 2.0, underwater_texture), 1.0);
+                            vec4 groundTexColor = mix(dirtTexColor, underwaterTexColor, (vertex_worldspace.y < 0.0) ? 1.0 - min(1.1, 1.1 - abs(vertex_worldspace.y)): 0.0);
+                            light_contribution = groundTexColor.xyz * light_colors[i].xyz * diffusivity * diffuse + light_colors[i].xyz * specularity * specular;
                             light_diffuse_contribution += attenuation * groundTexColor.xyz * light_colors[i].xyz * diffusivity * diffuse;
                             light_specular_contribution += attenuation * groundTexColor.xyz * specularity * specular;
                         }
@@ -304,12 +308,14 @@ export class Grass_Shader_Shadow extends Shader {
                 }
         
                 void main(){
-                    vec4 groundTexColor = vec4(triPlanar(N, vertex_worldspace), 1.0);
+                    vec4 dirtTexColor = vec4(triPlanar(N, vertex_worldspace, ground_texture), 1.0);
+                    vec4 underwaterTexColor = vec4(triPlanar(N, vertex_worldspace / 2.0, underwater_texture), 1.0);
+                    vec4 groundTexColor = mix(dirtTexColor, underwaterTexColor, (vertex_worldspace.y < 0.0) ? 1.0 - min(1.1, 1.1 - abs(vertex_worldspace.y)): 0.0);
                     if (layer > 0.0){
                         gl_FragColor = vec4(grass_color.x * ambient + (layer / 70.0), grass_color.y * ambient + (layer / 70.0), grass_color.z * ambient + (layer / 70.0), 1.0);
                     }
                     else {
-                        gl_FragColor = vec4(groundTexColor.x * ambient, groundTexColor.y * ambient, groundTexColor.z * ambient, 1.0);
+                        gl_FragColor = vec4(groundTexColor.xyz * ambient, 1.0);
                     }
                     vec3 diffuse, specular;
                     vec3 other_than_ambient = phong_model_lights( normalize( N ), vertex_worldspace, diffuse, specular );
@@ -355,7 +361,7 @@ export class Grass_Shader_Shadow extends Shader {
                             broad = 1.0 - (1.0 - broad) * 25.0;
                         }
                         
-                        float alpha =  broad * coarse - ((layer + 0.2) * 1.2 / 1.0);
+                        float alpha =  broad * coarse - ((layer + 0.2) * 1.1 / 1.0);
                         
                         if (alpha < 0.0 || worldPos.y < -1.0){
                              discard;
@@ -630,7 +636,7 @@ export class Grass_Shader_Background_Shadow extends Shader {
                             broad = 1.0 - (1.0 - broad) * 25.0;
                         }
                         
-                        float alpha =  broad * coarse - ((layer + 0.2) * 1.2 / 1.0);
+                        float alpha =  broad * coarse - ((layer + 0.2) * 1.1 / 1.0);
                         
                         if (alpha < 0.0 || worldPos.y < -1.0){
                              discard;
@@ -945,10 +951,10 @@ export class Water_Shader extends Shader{
                     
                     float foam = ((2.5 + sin(-depthDifference * 10.0 + time * 2.0)) / 2.0) * (pow(2.0, -8.0 * depthDifference));
                     //vec4 preColor = vec4(mix(shallow_color.xyz, deep_color.xyz, (sin(min(depthDifference / 5.0, 1.0) * 3.14159 / 2.0 ))), 1.0);
-                    
-                      gl_FragColor = mix(mix(shallow_color, deep_color, (sin(min(depthDifference / 5.0, 1.0) * 3.14159 / 2.0 ))), bgColor, 1.0 - (sin(min(depthDifference / 8.0, 1.0) * 3.14159 / 2.0 )));
-                      gl_FragColor.xyz += lighting + foam;
-                      //gl_FragColor.xyz += reflectColor;
+                   
+                    gl_FragColor = mix(mix(shallow_color, deep_color, (sin(min(depthDifference / 5.0, 1.0) * 3.14159 / 2.0 ))), bgColor, 1.0 - (sin(min(depthDifference / 8.0, 1.0) * 3.14159 / 2.0 )));
+                    gl_FragColor.xyz += lighting + foam;
+                    //gl_FragColor.xyz += reflectColor;
                 }`;
     }
 }

@@ -313,6 +313,7 @@ export class Team_Project extends Scene {
         this.waterFlowMap = new Texture("assets/textures/flow_speed_noise.png");
         this.grassCoarseTexture = new Texture("assets/noise/grainy.png", "LINEAR");
         this.grassBroadTexture = new Texture("assets/noise/perlin2.png", "LINEAR");
+        this.grassUnderwaterTexture = new Texture("assets/textures/underwater_diffuse.png");
         
         this.shapes = {
             'axis' : new defs.Axis_Arrows(),
@@ -371,7 +372,7 @@ export class Team_Project extends Scene {
     
         //the main grass plane has a higher density since we want the deformation to look smooth
         this.grass_plane = new Scene_Object(new Triangle_Strip_Plane(26, 26, Vector3.create(0,0,0), 7),
-            Mat4.translation(0,0,0), new Material(new Grass_Shader_Shadow(0), {grass_color: this.grass_color, ground_texture: this.grassGroundTexture, lush_grass: this.lush_grass,
+            Mat4.translation(0,0,0), new Material(new Grass_Shader_Shadow(0), {grass_color: this.grass_color, ground_texture: this.grassGroundTexture, lush_grass: this.lush_grass, underwater_texture: this.grassUnderwaterTexture,
                 texture: this.grassOcclusionTexture, ambient: 0.2, diffusivity: 2.0, specularity: 0.5, smoothness: 30, grass_broad_texture: this.grassBroadTexture, grass_coarse_texture: this.grassCoarseTexture,
                 light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat}), "TRIANGLE_STRIP");
 
