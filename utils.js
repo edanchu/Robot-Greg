@@ -67,19 +67,35 @@ export class Triangle_Strip_Plane extends Shape{
 
     //adds to a given vertex's height (normal and position) up to a specified max value
     addVertexHeight(x, z, newHeight, max = 20){
-        if ((x + (z * this.width * this.density)) < this.arrays.position.length && (x + (z * this.width * this.density)) >= 0) {
+        if ((x + 1 + ((z + 1) * this.width * this.density)) < this.arrays.position.length && (x - 1 + ((z - 1) * this.width * this.density)) >= 0) {
             if (this.arrays.position[x + (z * this.width * this.density)][1] + newHeight <= max) {
+                
                 this.arrays.position[x + (z * this.width * this.density)][1] += newHeight;
-                for(let i = -1; i < 2; i++){
-                    for(let j = -1; j < 2; j++) {
-                        if (((x + i) + ((z + j) * this.width * this.density)) < this.arrays.position.length && ((x + i) + ((z + j) * this.width * this.density)) >= 0){
-                            this.arrays.normal[(x + i) + ((z + j) * this.width * this.density)][0] =
-                                Math.max(Math.min(this.arrays.normal[(x + i) + ((z + j) * this.width * this.density)][0] + i * 0.001, 0.12),  -0.12);
-                            this.arrays.normal[(x + i) + ((z + j) * this.width * this.density)][2] =
-                                Math.max(Math.min(this.arrays.normal[(x + i) + ((z + j) * this.width * this.density)][2] + j * 0.001, 0.12), -0.12);
-                        }
-                    }
-                }
+                
+                let point = this.arrays.position[x + (z * this.width * this.density)];
+                
+                let edge1 = this.arrays.position[x + 0 + ((z - 1) * this.width * this.density)].minus(point);
+                let edge2 = this.arrays.position[x - 1 + ((z - 1) * this.width * this.density)].minus(point);
+                let norm1 = edge1.cross(edge2).normalized();
+    
+                let edge3 = this.arrays.position[x + 1 + ((z - 0) * this.width * this.density)].minus(point);
+                let norm2 = edge3.cross(edge1).normalized();
+    
+                let edge4 = this.arrays.position[x + 1 + ((z + 1) * this.width * this.density)].minus(point);
+                let norm3 = edge4.cross(edge3).normalized();
+    
+                let edge5 = this.arrays.position[x + 0 + ((z + 1) * this.width * this.density)].minus(point);
+                let norm4 = edge5.cross(edge4).normalized();
+    
+                let edge6 = this.arrays.position[x - 1 + ((z - 0) * this.width * this.density)].minus(point);
+                let norm5 = edge6.cross(edge5).normalized();
+    
+                let norm6 = edge2.cross(edge6).normalized();
+                
+                let avgNorm = norm6.plus(norm5.plus(norm4.plus(norm3.plus(norm2.plus(norm1))))).times(1/6);
+    
+                this.arrays.normal[x + (z * this.width * this.density)] = avgNorm;
+                
             }
             else {
                 this.arrays.position[x + (z * this.width * this.density)][1] = max;
@@ -92,16 +108,29 @@ export class Triangle_Strip_Plane extends Shape{
         if ((x + (z * this.width * this.density)) < this.arrays.position.length && (x + (z * this.width * this.density)) >= 0) {
             if (this.arrays.position[x + (z * this.width * this.density)][1] - newHeight >= min) {
                 this.arrays.position[x + (z * this.width * this.density)][1] -= newHeight;
-                for(let i = -1; i < 2; i++){
-                    for(let j = -1; j < 2; j++) {
-                        if (((x + i) + ((z + j) * this.width * this.density)) < this.arrays.position.length && ((x + i) + ((z + j) * this.width * this.density)) >= 0){
-                            this.arrays.normal[(x + i) + ((z + j) * this.width * this.density)][0] =
-                                Math.max(Math.min(this.arrays.normal[(x + i) + ((z + j) * this.width * this.density)][0] - i * 0.0015, 0.12),  -0.12);
-                            this.arrays.normal[(x + i) + ((z + j) * this.width * this.density)][2] =
-                                Math.max(Math.min(this.arrays.normal[(x + i) + ((z + j) * this.width * this.density)][2] - j * 0.0015, 0.12), -0.12);
-                        }
-                    }
-                }
+                let point = this.arrays.position[x + (z * this.width * this.density)];
+    
+                let edge1 = this.arrays.position[x + 0 + ((z - 1) * this.width * this.density)].minus(point);
+                let edge2 = this.arrays.position[x - 1 + ((z - 1) * this.width * this.density)].minus(point);
+                let norm1 = edge1.cross(edge2).normalized();
+    
+                let edge3 = this.arrays.position[x + 1 + ((z - 0) * this.width * this.density)].minus(point);
+                let norm2 = edge3.cross(edge1).normalized();
+    
+                let edge4 = this.arrays.position[x + 1 + ((z + 1) * this.width * this.density)].minus(point);
+                let norm3 = edge4.cross(edge3).normalized();
+    
+                let edge5 = this.arrays.position[x + 0 + ((z + 1) * this.width * this.density)].minus(point);
+                let norm4 = edge5.cross(edge4).normalized();
+    
+                let edge6 = this.arrays.position[x - 1 + ((z - 0) * this.width * this.density)].minus(point);
+                let norm5 = edge6.cross(edge5).normalized();
+    
+                let norm6 = edge2.cross(edge6).normalized();
+    
+                let avgNorm = norm6.plus(norm5.plus(norm4.plus(norm3.plus(norm2.plus(norm1))))).times(1/6);
+    
+                this.arrays.normal[x + (z * this.width * this.density)] = avgNorm;
             }
             else {
                 this.arrays.position[x + (z * this.width * this.density)][1] = min;

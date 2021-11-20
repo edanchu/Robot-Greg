@@ -201,6 +201,16 @@ export class Grass_Shader_Shadow extends Shader {
                 uniform vec4 grass_color;
         
                 varying vec3 N, vertex_worldspace;
+                
+                vec3 triPlanar(vec3 N, vec3 vertex_worldspace){
+                    vec3 x = texture2D(ground_texture, vertex_worldspace.zy / 2.0).xyz;
+                    vec3 y = texture2D(ground_texture, vertex_worldspace.xz / 2.0).xyz;
+                    vec3 z = texture2D(ground_texture, vertex_worldspace.xy / 2.0).xyz;
+                    vec3 normal = normalize(abs(N));
+                    vec3 normalWeight = normal / (normal.x + normal.y + normal.z);
+                    return normalWeight.x * x + normalWeight.y * y + normalWeight.z * z;
+                }
+                
                 vec3 phong_model_lights( vec3 N, vec3 vertex_worldspace, 
                         out vec3 light_diffuse_contribution, out vec3 light_specular_contribution){                                        
                     vec3 E = normalize( camera_center - vertex_worldspace );
@@ -214,11 +224,11 @@ export class Grass_Shader_Shadow extends Shader {
         
                         vec3 L = normalize( surface_to_light_vector );
                         vec3 H = normalize( L + E );
-                        float diffuse  =      max( dot( N, L ), 0.0 );
-                        float specular = pow( max( dot( N, H ), 0.0 ), smoothness );
+                        float diffuse  =      min(max( dot( N, L ), 0.2 ), 0.5);
+                        float specular = pow( max( dot( N, H ), 0.2 ), smoothness );
                         float attenuation = 1.0 / (1.0 + light_attenuation_factors[i] * distance_to_light * distance_to_light );
                         
-                        vec3 light_contribution = vec3(1.0,1.0,1.0);
+                        vec3 light_contribution = vec3(0.0,0.0,0.0);
                         if (layer > 0.0){
                             light_contribution = grass_color.xyz * light_colors[i].xyz * diffusivity * diffuse
                                                                   + light_colors[i].xyz * specularity * specular;
@@ -226,7 +236,7 @@ export class Grass_Shader_Shadow extends Shader {
                             light_specular_contribution += attenuation * grass_color.xyz * specularity * specular;
                         }
                         else{
-                            vec4 groundTexColor = texture2D(ground_texture, f_tex_coord * 10.0);
+                            vec4 groundTexColor = vec4(triPlanar(N, vertex_worldspace), 1.0);
                             light_contribution = groundTexColor.xyz * light_colors[i].xyz * diffusivity * diffuse
                                                                   + light_colors[i].xyz * specularity * specular;
                             light_diffuse_contribution += attenuation * groundTexColor.xyz * light_colors[i].xyz * diffusivity * diffuse;
@@ -275,6 +285,7 @@ export class Grass_Shader_Shadow extends Shader {
                     return (2.0 * 0.5 * 500.0) / (500.0 + 0.5 - val * (500.0 - 0.5));
                 }
                 
+                
                 float PCF_shadow(vec2 center, float projected_depth) {
                     float shadow = 0.0;
                     float texel_size = 1.0 / light_texture_size;
@@ -291,7 +302,7 @@ export class Grass_Shader_Shadow extends Shader {
                 }
         
                 void main(){
-                    vec4 groundTexColor = texture2D(ground_texture, f_tex_coord * 60.0);
+                    vec4 groundTexColor = vec4(triPlanar(N, vertex_worldspace), 1.0);
                     if (layer > 0.0){
                         gl_FragColor = vec4(grass_color.x * ambient + (layer / 70.0), grass_color.y * ambient + (layer / 70.0), grass_color.z * ambient + (layer / 70.0), 1.0);
                     }
