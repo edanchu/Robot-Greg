@@ -313,7 +313,7 @@ export class Team_Project extends Scene {
         this.waterFlowMap = new Texture("assets/textures/flow_speed_noise.png");
         this.grassCoarseTexture = new Texture("assets/noise/grainy.png", "LINEAR");
         this.grassBroadTexture = new Texture("assets/noise/perlin2.png", "LINEAR");
-        this.grassUnderwaterTexture = new Texture("assets/textures/underwater_diffuse.png");
+        this.grassUnderwaterTexture = new Texture("assets/textures/underwater2_diffuse.png");
         
         this.shapes = {
             'axis' : new defs.Axis_Arrows(),

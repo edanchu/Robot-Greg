@@ -241,7 +241,7 @@ export class Grass_Shader_Shadow extends Shader {
                         }
                         else{
                             vec4 dirtTexColor = vec4(triPlanar(N, vertex_worldspace, ground_texture), 1.0);
-                            vec4 underwaterTexColor = vec4(triPlanar(N, vertex_worldspace / 2.0, underwater_texture), 1.0);
+                            vec4 underwaterTexColor = vec4(triPlanar(N, vertex_worldspace * 1.3, underwater_texture), 1.0);
                             vec4 groundTexColor = mix(dirtTexColor, underwaterTexColor, (vertex_worldspace.y < 0.0) ? 1.0 - min(1.1, 1.1 - abs(vertex_worldspace.y)): 0.0);
                             light_contribution = groundTexColor.xyz * light_colors[i].xyz * diffusivity * diffuse + light_colors[i].xyz * specularity * specular;
                             light_diffuse_contribution += attenuation * groundTexColor.xyz * light_colors[i].xyz * diffusivity * diffuse;
@@ -309,7 +309,7 @@ export class Grass_Shader_Shadow extends Shader {
         
                 void main(){
                     vec4 dirtTexColor = vec4(triPlanar(N, vertex_worldspace, ground_texture), 1.0);
-                    vec4 underwaterTexColor = vec4(triPlanar(N, vertex_worldspace / 2.0, underwater_texture), 1.0);
+                    vec4 underwaterTexColor = vec4(triPlanar(N, vertex_worldspace * 1.3, underwater_texture), 1.0);
                     vec4 groundTexColor = mix(dirtTexColor, underwaterTexColor, (vertex_worldspace.y < 0.0) ? 1.0 - min(1.1, 1.1 - abs(vertex_worldspace.y)): 0.0);
                     if (layer > 0.0){
                         gl_FragColor = vec4(grass_color.x * ambient + (layer / 70.0), grass_color.y * ambient + (layer / 70.0), grass_color.z * ambient + (layer / 70.0), 1.0);
