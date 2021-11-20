@@ -103,6 +103,7 @@ export class Grass_Shader_Shadow extends Shader {
         material.grass_coarse_texture.activate(context, 4);
         context.uniform1i(gpu_addresses.grass_broad_texture, 5);
         material.grass_broad_texture.activate(context, 5);
+        context.uniform1i(gpu_addresses.lush_grass, material.lush_grass);
 
         context.uniform1f(gpu_addresses.time, graphics_state.animation_time / 1000.0);
         context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform.transposed()));
@@ -279,6 +280,7 @@ export class Grass_Shader_Shadow extends Shader {
                 uniform bool draw_shadow;
                 uniform sampler2D grass_coarse_texture;
                 uniform sampler2D grass_broad_texture;
+                uniform bool lush_grass;
                 
                 float linearDepth(float val){
                     val = 2.0 * val - 1.0;
@@ -344,9 +346,14 @@ export class Grass_Shader_Shadow extends Shader {
                         // }
                         
                         float coarse = texture2D(grass_coarse_texture, f_tex_coord / 1.2).x * 2.0 - 1.1;
-                        float broad = texture2D(grass_broad_texture, f_tex_coord * 3.0).x * 2.0 - 1.0;
+                        float broad = texture2D(grass_broad_texture, f_tex_coord * 2.0).x * 2.0 - 1.1;
                         coarse = coarse * 1.2;
-                        broad = 1.0 - (1.0 - perlinNoise(worldPos.xz)) * 40.0;
+                        if (!lush_grass){
+                            broad = 1.0 - (1.0 - perlinNoise(worldPos.xz)) * 40.0;
+                        }
+                        else{
+                            broad = 1.0 - (1.0 - broad) * 25.0;
+                        }
                         
                         float alpha =  broad * coarse - ((layer + 0.2) * 1.2 / 1.0);
                         
@@ -391,7 +398,8 @@ export class Grass_Shader_Background_Shadow extends Shader {
         context.uniform1f(gpu_addresses.smoothness, material.smoothness);
         const O = vec4(0, 0, 0, 1), camera_center = graphics_state.camera_transform.times(O).to3();
         context.uniform3fv(gpu_addresses.camera_center, camera_center);
-
+        context.uniform1i(gpu_addresses.lush_grass, material.lush_grass);
+    
         if (!graphics_state.lights.length)
             return;
 
@@ -545,6 +553,7 @@ export class Grass_Shader_Background_Shadow extends Shader {
                 uniform bool draw_shadow;
                 uniform sampler2D grass_coarse_texture;
                 uniform sampler2D grass_broad_texture;
+                uniform bool lush_grass;
                 
                 float linearDepth(float val){
                     val = 2.0 * val - 1.0;
@@ -614,7 +623,12 @@ export class Grass_Shader_Background_Shadow extends Shader {
                         float coarse = texture2D(grass_coarse_texture, 5.0 * f_tex_coord / 1.2).x * 2.0 - 1.1;
                         float broad = texture2D(grass_broad_texture, f_tex_coord * 3.0).x * 2.0 - 1.0;
                         coarse = coarse * 1.2;
-                        broad = 1.0 - (1.0 - perlinNoise(worldPos.xz)) * 40.0;
+                        if (!lush_grass){
+                            broad = 1.0 - (1.0 - perlinNoise(worldPos.xz)) * 40.0;
+                        }
+                        else{
+                            broad = 1.0 - (1.0 - broad) * 25.0;
+                        }
                         
                         float alpha =  broad * coarse - ((layer + 0.2) * 1.2 / 1.0);
                         

@@ -96,6 +96,7 @@ export class Team_Project extends Scene {
         });
         this.key_triggered_button("Performance Mode", ["p"], () => this.performanceMode = !this.performanceMode);
         this.key_triggered_button("Uber Performance Mode", ["u"], () => this.uberPerformanceMode = !this.uberPerformanceMode);
+        this.key_triggered_button("Toggle Lush Grass", ["g"], () => this.lush_grass = !this.lush_grass);
     }
 
     texture_buffer_init(gl) {
@@ -311,7 +312,7 @@ export class Team_Project extends Scene {
         this.waterNormal = new Texture("assets/textures/water_normal.png");
         this.waterFlowMap = new Texture("assets/textures/flow_speed_noise.png");
         this.grassCoarseTexture = new Texture("assets/noise/grainy.png", "LINEAR");
-        this.grassBroadTexture = new Texture("assets/noise/perlin.png", "LINEAR");
+        this.grassBroadTexture = new Texture("assets/noise/perlin2.png", "LINEAR");
         
         this.shapes = {
             'axis' : new defs.Axis_Arrows(),
@@ -332,6 +333,7 @@ export class Team_Project extends Scene {
         this.placeRobot = false;
         this.robotMov = false;
         this.placeGoal = false;
+        this.lush_grass = false;
         
         //grass vars
         this.grass_color = hex_color("#118c03");
@@ -369,12 +371,12 @@ export class Team_Project extends Scene {
     
         //the main grass plane has a higher density since we want the deformation to look smooth
         this.grass_plane = new Scene_Object(new Triangle_Strip_Plane(26, 26, Vector3.create(0,0,0), 7),
-            Mat4.translation(0,0,0), new Material(new Grass_Shader_Shadow(0), {grass_color: this.grass_color, ground_texture: this.grassGroundTexture,
+            Mat4.translation(0,0,0), new Material(new Grass_Shader_Shadow(0), {grass_color: this.grass_color, ground_texture: this.grassGroundTexture, lush_grass: this.lush_grass,
                 texture: this.grassOcclusionTexture, ambient: 0.2, diffusivity: 2.0, specularity: 0.5, smoothness: 30, grass_broad_texture: this.grassBroadTexture, grass_coarse_texture: this.grassCoarseTexture,
                 light_depth_texture: null, lightDepthTextureSize: this.lightDepthTextureSize, draw_shadow: true, light_view_mat: this.light_view_mat, light_proj_mat: this.light_proj_mat}), "TRIANGLE_STRIP");
 
         this.water_plane = new Scene_Object(new Triangle_Strip_Plane(26,26, Vector3.create(0,0,0), 7), Mat4.translation(0,-0.7,0),
-            new Material(new Water_Shader(), {shallow_color: hex_color("#00ffe8"), deep_color: hex_color("#052a44"), ambient: 0.0, diffusivity: 1.0, specularity: 0.025, smoothness: 1,
+            new Material(new Water_Shader(), {shallow_color: hex_color("#00ffe8"), deep_color: hex_color("#052a44"), ambient: 0.0, diffusivity: 1.0, specularity: 0.025, smoothness: 1, lush_grass: this.lush_grass,
             depth_texture: null, bg_color_texture: null, water_normal: this.waterNormal, derivative_height: this.waterDerivativeHeight, water_flow: this.waterFlowMap}), "TRIANGLE_STRIP");
         
         
@@ -418,6 +420,7 @@ export class Team_Project extends Scene {
         if(drawWater) {
             this.background_grass_plane.material.light_depth_texture = this.lightDepthTexture;
             this.background_grass_plane.material.draw_shadow = true;
+            this.background_grass_plane.material.lush_grass = this.lush_grass;
             let bglayers = this.performanceMode ? 1 : 18;
             for (let i = 0; i < bglayers; i += 2) {
                 this.background_grass_plane.material.shader.layer = i;
@@ -428,6 +431,7 @@ export class Team_Project extends Scene {
         
         this.grass_plane.material.light_depth_texture = this.lightDepthTexture;
         this.grass_plane.material.draw_shadow = true;
+        this.grass_plane.material.lush_grass = this.lush_grass;
         let layers = this.uberPerformanceMode ? 1 : 18;
         for (let i = 0; i < layers; i+= 2) {
             this.grass_plane.material.shader.layer = i;
