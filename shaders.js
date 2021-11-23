@@ -265,12 +265,11 @@ export class Grass_Shader_Shadow extends Shader {
                 uniform mat4 inv_transpose_model_transform;
                 
                 void main(){
-                    worldPos = model_transform * vec4(position, 1.0);
-                    float alpha = (layer / 10.0) * PerlinNoise3Pass(worldPos.xz + vec2(time * 1.5, time * 1.5), 2.0);
+                    vertex_worldspace = (model_transform * vec4( position, 1.0 )).xyz;
+                    float alpha = (layer / 10.0) * PerlinNoise3Pass(vertex_worldspace.xz + vec2(time * 1.5, time * 1.5), 2.0);
                     gl_Position = projection_camera_model_transform * vec4(position.x + (0.2 * alpha), position.y + (0.04 * layer), position.z + (0.2 * alpha), 1.0);
                     f_tex_coord = texture_coord;
                     N =  normalize((inv_transpose_model_transform * vec4(normal, 0.0)).xyz);
-                    vertex_worldspace = (model_transform * vec4( position, 1.0 )).xyz;
                 }`;
     }
 
@@ -344,10 +343,10 @@ export class Grass_Shader_Shadow extends Shader {
                     gl_FragColor.xyz += diffuse + specular;
                     
                     if (layer > 0.0){
-                        // float perlin = 1.0 - (1.0 - PerlinNoise3Pass(worldPos.xz, 50.0)) * 2.2;
-                        // float white = 1.0 - (1.0 - perlinNoise(worldPos.xz)) * 40.0;
+                        // float perlin = 1.0 - (1.0 - PerlinNoise3Pass(vertex_worldspace.xz, 50.0)) * 2.2;
+                        // float white = 1.0 - (1.0 - perlinNoise(vertex_worldspace.xz)) * 40.0;
                         // float alpha = perlin * white - ((layer + 0.2) * 1.2 / 1.0);
-                        // if (alpha < 0.0 || worldPos.y < -1.0){
+                        // if (alpha < 0.0 || vertex_worldspace.y < -1.0){
                         //     discard;
                         // }
                         
@@ -355,7 +354,7 @@ export class Grass_Shader_Shadow extends Shader {
                         float broad = texture2D(grass_broad_texture, f_tex_coord * 2.0).x * 2.0 - 1.1;
                         coarse = coarse * 1.2;
                         if (!lush_grass){
-                            broad = 1.0 - (1.0 - perlinNoise(worldPos.xz)) * 40.0;
+                            broad = 1.0 - (1.0 - perlinNoise(vertex_worldspace.xz)) * 40.0;
                         }
                         else{
                             broad = 1.0 - (1.0 - broad) * 25.0;
@@ -363,7 +362,7 @@ export class Grass_Shader_Shadow extends Shader {
                         
                         float alpha =  broad * coarse - ((layer + 0.2) * 1.1 / 1.0);
                         
-                        if (alpha < 0.0 || worldPos.y < -1.0){
+                        if (alpha < 0.0 || vertex_worldspace.y < -1.0){
                              discard;
                         }
                         
@@ -658,8 +657,10 @@ export class Water_Shader extends Shader{
         context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
         context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform.transposed()));
         context.uniformMatrix4fv(gpu_addresses.inv_transpose_model_transform, false, Matrix.flatten_2D_to_1D(Mat4.inverse(model_transform)));
+        context.uniformMatrix4fv(gpu_addresses.inv_transpose_view_matrix, false, Matrix.flatten_2D_to_1D(Mat4.inverse(graphics_state.camera_inverse)));
         context.uniformMatrix4fv(gpu_addresses.view_matrix, false, Matrix.flatten_2D_to_1D(graphics_state.camera_inverse.transposed()));
         context.uniformMatrix4fv(gpu_addresses.proj_matrix, false, Matrix.flatten_2D_to_1D(graphics_state.projection_transform.transposed()));
+        context.uniform1f(gpu_addresses.doSSR, material.doSSR);
         context.uniform1f(gpu_addresses.time, graphics_state.animation_time / 1000);
         context.uniform4fv(gpu_addresses.shallow_color, material.shallow_color);
         context.uniform4fv(gpu_addresses.deep_color, material.deep_color);
@@ -853,6 +854,7 @@ export class Water_Shader extends Shader{
                 varying vec3 vertex_viewspace;
                 uniform mat4 inv_transpose_view_matrix;
                 uniform mat4 inv_transpose_model_transform;
+                uniform bool doSSR;
                 
                  float linearDepth(float val){
                     val = 2.0 * val - 1.0;
@@ -863,7 +865,7 @@ export class Water_Shader extends Shader{
                     vec4 coords;
                     float depth;
                     for (float i = 0.0; i < 10.0; i++){
-                        dir *= 1.1;
+                         dir *= 1.1;
                          coords = proj_matrix * vec4(pos,1.0);
                          coords.xy = (coords.xy/coords.w) * 0.5 + 0.5;
                          depth = linearDepth(texture2D(depth_texture, coords.xy).r);
@@ -899,7 +901,7 @@ export class Water_Shader extends Shader{
                     dh.xy = dh.xy * 2.0 - 1.0;
                     return dh;
                 }
-                
+
                 void main(){
                     vec3 flow = texture2D(water_flow, f_texture_coord).xyz;
                     flow.xy = flow.xy * 2.0 - 1.0;
@@ -911,7 +913,7 @@ export class Water_Shader extends Shader{
                     vec3 dhB = UnpackDerivativeHeight(texture2D(derivative_height, uvwB.xy)) * uvwB.z * heightScale;
                     vec3 normal = normalize(vec3(-(dhA.xy + dhB.xy), 1.0));
                     
-                    float refractionStrength = 0.039;
+                    float refractionStrength = 0.033;
                     vec2 bgSS = vec2((gl_FragCoord.x - 0.5) / 1919.0, (gl_FragCoord.y - 0.5) / 1079.0);
                     float refractionDepthVal = texture2D(depth_texture, bgSS + (normal.xy * refractionStrength)).r;
                     refractionDepthVal = linearDepth(refractionDepthVal) - linearDepth(gl_FragCoord.z);
@@ -924,37 +926,45 @@ export class Water_Shader extends Shader{
                     float depthVal = texture2D(depth_texture, bgSS).r;
                     float depthDifference = linearDepth(depthVal) - linearDepth(gl_FragCoord.z);
                     
-                    // vec3 reflectDirection = reflect(normalize(vertex_viewspace), normalize((inv_transpose_view_matrix * inv_transpose_model_transform * vec4(N, 0.0)).xyz));
-                    // vec3 reflectColor = vec3(0.0);
-                    // vec3 search = vec3(0.0);
-                    // bool reflectFound = false;
-                    // for(float i = 0.0; i < 5.0; i++){
-                    //     if (reflectDirection.z > 0.0) break;
-                    //     reflectDirection *= 1.3;
-                    //     vec3 testPoint = vertex_viewspace + reflectDirection;
-                    //     vec4 testPosSS = (proj_matrix * vec4(testPoint, 1.0));
-                    //     testPosSS.xy = ( testPosSS.xy / testPosSS.w) * 0.5 + 0.5;
-                    //     float testPointDepth = linearDepth(texture2D(depth_texture, testPosSS.xy).r);
-                    //     float diff = testPoint.z - testPointDepth;
-                    //     if (diff < 0.0){
-                    //         reflectFound = true;
-                    //         reflectDirection = normalize(reflectDirection);
-                    //         search = binSearch(testPoint, reflectDirection, diff);
-                    //         break;
-                    //     }
-                    // }
-                    // if (reflectFound == true){
-                    //     reflectColor += texture2D(bg_color_texture, search.xy + (normal.xy * refractionStrength)).xyz;
-                    // }
+                    vec3 reflectColor = vec3(0.0);
+                    if (doSSR){
+                    vec3 reflectDirection = reflect(normalize(vertex_viewspace), normalize((inv_transpose_view_matrix * inv_transpose_model_transform * vec4(0.0, 1.0, 0.0, 0.0)).xyz));
+                    vec3 search = vec3(0.0);
+                    bool reflectFound = false;
+                    for(float i = 0.0; i < 5.0; i++){
+                        if (reflectDirection.z > 0.0) break;
+                        reflectDirection *= 2.0;
+                        vec3 testPoint = vertex_viewspace + reflectDirection;
+                        vec4 testPosSS = (proj_matrix * vec4(testPoint, 1.0));
+                        testPosSS.xy = ( testPosSS.xy / testPosSS.w) * 0.5 + 0.5;
+                        if (testPosSS.x >= 1.0 || testPosSS.y >= 1.0) break;
+                        float testPointDepth = linearDepth(texture2D(depth_texture, testPosSS.xy).r);
+                        float diff = testPoint.z - testPointDepth;
+                        if (diff < 1.2){
+                            reflectFound = true;
+                            reflectDirection = normalize(reflectDirection);
+                            search = binSearch(testPoint, reflectDirection, diff);
+                            break;
+                        }
+                    }
+                    if (reflectFound == true){
+                        vec2 edgeFadeVec = smoothstep(0.2, 0.6, abs(vec2(0.5, 0.5) - search.xy));
+                        float edgeFade = clamp(1.0 - (edgeFadeVec.x + edgeFadeVec.y), 0.0, 1.0);
+                        reflectColor += texture2D(bg_color_texture, search.xy + (normal.xy * refractionStrength)).xyz * edgeFade;
+                    }
+                    }
                     
                     vec3 lighting = phong_model_lights( normalize( normal ), vertex_worldspace);
                     
-                    float foam = ((2.5 + sin(-depthDifference * 10.0 + time * 2.0)) / 2.0) * (pow(2.0, -8.0 * depthDifference));
-                    //vec4 preColor = vec4(mix(shallow_color.xyz, deep_color.xyz, (sin(min(depthDifference / 5.0, 1.0) * 3.14159 / 2.0 ))), 1.0);
+                    float foam = 0.0;
+                    if (depthDifference > 0.1){
+                        foam = ((2.5 + sin(-depthDifference * 10.0 + time * 2.0)) / 2.0) * (pow(2.0, -10.0 * depthDifference));
+                    }
                    
-                    gl_FragColor = mix(mix(shallow_color, deep_color, (sin(min(depthDifference / 5.0, 1.0) * 3.14159 / 2.0 ))), bgColor, 1.0 - (sin(min(depthDifference / 8.0, 1.0) * 3.14159 / 2.0 )));
-                    gl_FragColor.xyz += lighting + foam;
-                    //gl_FragColor.xyz += reflectColor;
+                    // gl_FragColor = mix(mix(shallow_color, deep_color, (sin(min(depthDifference / 5.0, 1.0) * 3.14159 / 2.0 ))), bgColor, 1.0 - (sin(min(depthDifference / 8.0, 1.0) * 3.14159 / 2.0 )));
+                    // gl_FragColor.xyz += lighting + foam;
+                    // gl_FragColor.xyz += reflectColor;
+                    gl_FragColor = vec4(reflectColor, 1.0);
                 }`;
     }
 }

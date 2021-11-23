@@ -97,6 +97,7 @@ export class Team_Project extends Scene {
         this.key_triggered_button("Performance Mode", ["p"], () => this.performanceMode = !this.performanceMode);
         this.key_triggered_button("Uber Performance Mode", ["u"], () => this.uberPerformanceMode = !this.uberPerformanceMode);
         this.key_triggered_button("Toggle Lush Grass", ["g"], () => this.lush_grass = !this.lush_grass);
+        this.key_triggered_button("Toggle Water SSR", ["h"], () => this.waterSSR = !this.waterSSR);
     }
 
     texture_buffer_init(gl) {
@@ -135,14 +136,14 @@ export class Team_Project extends Scene {
         //camera
 
         gl.bindTexture(gl.TEXTURE_2D, this.cameraDepthTextureGPU);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT, 1920, 1080, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT, this.bgPassWidth, this.bgPassHeight, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
         gl.bindTexture(gl.TEXTURE_2D, this.cameraColorTextureGPU);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1920, 1080, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.bgPassWidth, this.bgPassHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -278,7 +279,7 @@ export class Team_Project extends Scene {
 
     setFrameBufferForDepthPass(context, program_state, projTransformStorage, cameraStorage){
         context.context.bindFramebuffer(context.context.FRAMEBUFFER, this.cameraDepthFramebuffer);
-        context.context.viewport(0, 0, 1920, 1080);
+        context.context.viewport(0, 0, this.bgPassWidth, this.bgPassHeight);
         context.context.clear(context.context.COLOR_BUFFER_BIT | context.context.DEPTH_BUFFER_BIT);
         program_state.projection_transform = projTransformStorage;
         program_state.camera_inverse = cameraStorage;
@@ -335,6 +336,7 @@ export class Team_Project extends Scene {
         this.robotMov = false;
         this.placeGoal = false;
         this.lush_grass = false;
+        this.waterSSR = false;
         
         //grass vars
         this.grass_color = hex_color("#118c03");
@@ -351,7 +353,9 @@ export class Team_Project extends Scene {
             vec3(0, 1, 0),
         );
         this.light_proj_mat = Mat4.perspective(this.light_field_of_view, 1, 0.5, 500);
-
+        this.bgPassHeight = 360;
+        this.bgPassWidth = this.bgPassHeight * 16 / 9;
+        
         this.materials = {
             plastic: new Material(new defs.Phong_Shader(), {ambient: .4, diffusivity: .6, color: hex_color("#ffffff")}),
             plastic_shadows: new Material(new Shadow_Textured_Phong(), {ambient: .4, diffusivity: .6, specularity: 0.2, smoothness: 5, color_texture: new Texture("assets/noise/perlin2.png"),
@@ -378,7 +382,7 @@ export class Team_Project extends Scene {
 
         this.water_plane = new Scene_Object(new Triangle_Strip_Plane(26,26, Vector3.create(0,0,0), 7), Mat4.translation(0,-0.7,0),
             new Material(new Water_Shader(), {shallow_color: hex_color("#00ffe8"), deep_color: hex_color("#052a44"), ambient: 0.0, diffusivity: 1.0, specularity: 0.025, smoothness: 1, lush_grass: this.lush_grass,
-            depth_texture: null, bg_color_texture: null, water_normal: this.waterNormal, derivative_height: this.waterDerivativeHeight, water_flow: this.waterFlowMap}), "TRIANGLE_STRIP");
+            depth_texture: null, bg_color_texture: null, water_normal: this.waterNormal, derivative_height: this.waterDerivativeHeight, water_flow: this.waterFlowMap, doSSR: this.waterSSR}), "TRIANGLE_STRIP");
         
         
         //the skybox is just a sphere with the shader that makes the color look vaguely like sky above. We put everything inside this sphere
@@ -449,11 +453,12 @@ export class Team_Project extends Scene {
         this.materials.rock.light_depth_texture = null;
         
         if (drawWater) {
-            if (this.water_plane.material.bg_color_texture == null) {
-                this.water_plane.material.bg_color_texture = this.cameraColorTexture;
-                this.water_plane.material.depth_texture = this.cameraDepthTexture;
-            }
+            this.water_plane.material.bg_color_texture = this.cameraColorTexture;
+            this.water_plane.material.depth_texture = this.cameraDepthTexture;
+            this.water_plane.material.doSSR = this.waterSSR;
+            
             this.water_plane.drawObject(context, program_state);
+            
             this.water_plane.material.bg_color_texture = null;
             this.water_plane.material.depth_texture = null;
         }
@@ -530,13 +535,17 @@ export class Team_Project extends Scene {
             }
             else if (this.placeRobot === true) {
                 let dest = this.getClosestLocOnPlane(this.grass_plane, context, program_state, true);
-                this.robot.transform = Mat4.translation(dest[0], 0.77 + dest[1], dest[2]).times(Mat4.rotation(Math.PI, 0, 1, 0));
-                this.startPos = [Math.floor(7 * (dest[0] + 12)), Math.floor(7 * (dest[2] + 12))];
+                if (dest[1] === 0) {
+                    this.robot.transform = Mat4.translation(dest[0], 0.77 + dest[1], dest[2]).times(Mat4.rotation(Math.PI, 0, 1, 0));
+                    this.startPos = [Math.floor(7 * (dest[0] + 12)), Math.floor(7 * (dest[2] + 12))];
+                }
             }
             else if (this.placeGoal === true) {
                 let dest = this.getClosestLocOnPlane(this.grass_plane, context, program_state, true);
-                this.goal.transform = Mat4.translation(dest[0], 0.77 + dest[1], dest[2]).times(Mat4.rotation(Math.PI, 0, 1, 0));
-                this.goalPos = [Math.floor(7 * (dest[0] + 12)), Math.floor(7 * (dest[2] + 12))];
+                if (dest[1] === 0) {
+                    this.goal.transform = Mat4.translation(dest[0], 0.77 + dest[1], dest[2]).times(Mat4.rotation(Math.PI, 0, 1, 0));
+                    this.goalPos = [Math.floor(7 * (dest[0] + 12)), Math.floor(7 * (dest[2] + 12))];
+                }
             }
         }
         if (this.solveMaze === true) {
