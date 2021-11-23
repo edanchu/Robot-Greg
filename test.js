@@ -342,7 +342,7 @@ export class Team_Project extends Scene {
         this.grass_color = hex_color("#118c03");
         
         //variables to deal with light and shadows
-        this.lightDepthTextureSize = (this.performanceMode) ? (this.uberPerformanceMode ? 1024 : 2048) : 4096;
+        this.lightDepthTextureSize = 4096;
         this.light_position = vec4(23, 20, -23, 0);
         this.light_color = color(0.8,0.86,1,0);
         this.light_view_target = vec4(0, 0, 0, 1);
@@ -353,7 +353,7 @@ export class Team_Project extends Scene {
             vec3(0, 1, 0),
         );
         this.light_proj_mat = Mat4.perspective(this.light_field_of_view, 1, 0.5, 500);
-        this.bgPassHeight = 360;
+        this.bgPassHeight = 480;
         this.bgPassWidth = this.bgPassHeight * 16 / 9;
         
         this.materials = {
@@ -474,14 +474,14 @@ export class Team_Project extends Scene {
         this.background_grass_plane.material.draw_shadow = false;
         this.grass_plane.material.draw_shadow = false;
         
-        let bglayers = this.performanceMode ? 1:14;
-        for (let i = 0; i < bglayers; i+= 2) {
+        let bglayers = this.performanceMode ? 1:15;
+        for (let i = 0; i < bglayers; i+= 3) {
             this.background_grass_plane.material.shader.layer = i;
             this.background_grass_plane.drawObject(context, program_state);
         }
         
-        let layers = this.uberPerformanceMode ? 1 : 14;
-        for (let i = 0; i < layers; i+= 2) {
+        let layers = this.uberPerformanceMode ? 1 : 15;
+        for (let i = 0; i < layers; i+= 3) {
             this.grass_plane.material.shader.layer = i;
             this.grass_plane.drawObject(context, program_state);
         }

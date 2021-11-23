@@ -913,7 +913,7 @@ export class Water_Shader extends Shader{
                     vec3 dhB = UnpackDerivativeHeight(texture2D(derivative_height, uvwB.xy)) * uvwB.z * heightScale;
                     vec3 normal = normalize(vec3(-(dhA.xy + dhB.xy), 1.0));
                     
-                    float refractionStrength = 0.033;
+                    float refractionStrength = 0.036;
                     vec2 bgSS = vec2((gl_FragCoord.x - 0.5) / 1919.0, (gl_FragCoord.y - 0.5) / 1079.0);
                     float refractionDepthVal = texture2D(depth_texture, bgSS + (normal.xy * refractionStrength)).r;
                     refractionDepthVal = linearDepth(refractionDepthVal) - linearDepth(gl_FragCoord.z);
@@ -961,10 +961,10 @@ export class Water_Shader extends Shader{
                         foam = ((2.5 + sin(-depthDifference * 10.0 + time * 2.0)) / 2.0) * (pow(2.0, -10.0 * depthDifference));
                     }
                    
-                    // gl_FragColor = mix(mix(shallow_color, deep_color, (sin(min(depthDifference / 5.0, 1.0) * 3.14159 / 2.0 ))), bgColor, 1.0 - (sin(min(depthDifference / 8.0, 1.0) * 3.14159 / 2.0 )));
-                    // gl_FragColor.xyz += lighting + foam;
-                    // gl_FragColor.xyz += reflectColor;
-                    gl_FragColor = vec4(reflectColor, 1.0);
+                    gl_FragColor = mix(mix(shallow_color, deep_color, (sin(min(depthDifference / 5.0, 1.0) * 3.14159 / 2.0 ))), bgColor, 1.0 - (sin(min(depthDifference / 8.0, 1.0) * 3.14159 / 2.0 )));
+                    gl_FragColor.xyz += lighting + foam;
+                    gl_FragColor.xyz += reflectColor;
+                    // gl_FragColor = vec4(reflectColor, 1.0);
                 }`;
     }
 }
