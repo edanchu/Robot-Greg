@@ -287,7 +287,7 @@ export class Grass_Shader_Shadow extends Shader {
                 
                 float linearDepth(float val){
                     val = 2.0 * val - 1.0;
-                    return (2.0 * 0.5 * 500.0) / (500.0 + 0.5 - val * (500.0 - 0.5));
+                    return (2.0 * 0.5 * 150.0) / (150.0 + 0.5 - val * (150.0 - 0.5));
                 }
                 
                 
@@ -562,7 +562,7 @@ export class Grass_Shader_Background_Shadow extends Shader {
                 
                 float linearDepth(float val){
                     val = 2.0 * val - 1.0;
-                    return (2.0 * 0.5 * 500.0) / (500.0 + 0.5 - val * (500.0 - 0.5));
+                    return (2.0 * 0.5 * 150.0) / (150.0 + 0.5 - val * (150.0 - 0.5));
                 }
                 
                 float PCF_shadow(vec2 center, float projected_depth) {
@@ -858,7 +858,7 @@ export class Water_Shader extends Shader{
                 
                  float linearDepth(float val){
                     val = 2.0 * val - 1.0;
-                    return (2.0 * 1.0 * 500.0) / (500.0 + 1.0 - val * (500.0 - 1.0));
+                    return (2.0 * 1.0 * 150.0) / (150.0 + 1.0 - val * (150.0 - 1.0));
                 }
                 
                 vec3 binSearch(inout vec3 pos, inout vec3 dir, inout float delta){
@@ -1087,7 +1087,7 @@ export class Shadow_Textured_Phong extends Shader {
                 
                 float linearDepth(float val){
                     val = 2.0 * val - 1.0;
-                    return (2.0 * 0.5 * 500.0) / (500.0 + 0.5 - val * (500.0 - 0.5));
+                    return (2.0 * 0.5 * 150.0) / (150.0 + 0.5 - val * (150.0 - 0.5));
                 }
                 
                 float PCF_shadow(vec2 center, float projected_depth) {
@@ -1278,7 +1278,7 @@ export class Shadow_Textured_Phong_Maps extends Shader{
                 
                 float linearDepth(float val){
                     val = 2.0 * val - 1.0;
-                    return (2.0 * 0.5 * 500.0) / (500.0 + 0.5 - val * (500.0 - 0.5));
+                    return (2.0 * 0.5 * 150.0) / (150.0 + 0.5 - val * (150.0 - 0.5));
                 }
                 
                 float PCF_shadow(vec2 center, float projected_depth) {

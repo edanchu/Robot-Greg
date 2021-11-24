@@ -342,7 +342,7 @@ export class Team_Project extends Scene {
         this.grass_color = hex_color("#118c03");
         
         //variables to deal with light and shadows
-        this.lightDepthTextureSize = 4096;
+        this.lightDepthTextureSize = 2048;
         this.light_position = vec4(23, 20, -23, 0);
         this.light_color = color(0.8,0.86,1,0);
         this.light_view_target = vec4(0, 0, 0, 1);
@@ -352,7 +352,7 @@ export class Team_Project extends Scene {
             vec3(this.light_view_target[0], this.light_view_target[1], this.light_view_target[2]),
             vec3(0, 1, 0),
         );
-        this.light_proj_mat = Mat4.perspective(this.light_field_of_view, 1, 0.5, 500);
+        this.light_proj_mat = Mat4.perspective(this.light_field_of_view, 1, 0.5, 150);
         this.bgPassHeight = 480;
         this.bgPassWidth = this.bgPassHeight * 16 / 9;
         
@@ -437,7 +437,7 @@ export class Team_Project extends Scene {
         this.grass_plane.material.light_depth_texture = this.lightDepthTexture;
         this.grass_plane.material.draw_shadow = true;
         this.grass_plane.material.lush_grass = this.lush_grass;
-        let layers = this.uberPerformanceMode ? 1 : 18;
+        let layers = !drawWater ? 4 : this.uberPerformanceMode ? 1 : 18;
         for (let i = 0; i < layers; i+= 2) {
             this.grass_plane.material.shader.layer = i;
             this.grass_plane.drawObject(context, program_state);
@@ -495,7 +495,7 @@ export class Team_Project extends Scene {
         if (!context.scratchpad.controls) {
             this.children.push(context.scratchpad.controls = new Custom_Movement_Controls());
             program_state.set_camera(Mat4.look_at(vec3(9, 15, 22), vec3(1, 0, 0), vec3(0, 1, 0)));
-            program_state.projection_transform = Mat4.perspective(Math.PI / 4, context.width / context.height, 1, 500);
+            program_state.projection_transform = Mat4.perspective(Math.PI / 4, context.width / context.height, 1, 150);
 
             const ext = context.context.getExtension('WEBGL_depth_texture');
             if (!ext) {
