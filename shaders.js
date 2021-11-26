@@ -48,7 +48,7 @@ export class Skybox_Shader extends Shader {
                     vec4 topColor = topGrad * top_color;
                     vec4 bottomColor = bottomGrad * bottom_color;
                     vec4 sunColor = vec4(0.0);
-                    if (distance(worldPosition, light_position ) < 41.0) {
+                    if (distance(worldPosition, light_position ) < 2.0) {
                         sunColor += vec4(1.0);
                     }
                     gl_FragColor = topColor + bottomColor + midColor + sunColor;
@@ -343,6 +343,7 @@ export class Grass_Shader_Shadow extends Shader {
                     gl_FragColor.xyz += diffuse + specular;
                     
                     if (layer > 0.0){
+                        if(vertex_worldspace.y < -1.0) discard;
                         // float perlin = 1.0 - (1.0 - PerlinNoise3Pass(vertex_worldspace.xz, 50.0)) * 2.2;
                         // float white = 1.0 - (1.0 - perlinNoise(vertex_worldspace.xz)) * 40.0;
                         // float alpha = perlin * white - ((layer + 0.2) * 1.2 / 1.0);
@@ -362,7 +363,7 @@ export class Grass_Shader_Shadow extends Shader {
                         
                         float alpha =  broad * coarse - ((layer + 0.2) * 1.1 / 1.0);
                         
-                        if (alpha < 0.0 || vertex_worldspace.y < -1.0){
+                        if (alpha < 0.0){
                              discard;
                         }
                         
@@ -618,6 +619,9 @@ export class Grass_Shader_Background_Shadow extends Shader {
                     gl_FragColor.xyz += diffuse + specular;
 
                     if (layer > 0.0){
+                        if (worldPos.y < -1.0){
+                             discard;
+                        }
                         // float perlin = 1.0 - (1.0 - PerlinNoise3Pass(worldPos.xz, 50.0)) * 2.2;
                         // float white = 1.0 - (1.0 - perlinNoise(worldPos.xz)) * 40.0;
                         // float alpha = perlin * white - ((layer + 0.2) * 1.2 / 1.0);
@@ -961,7 +965,7 @@ export class Water_Shader extends Shader{
                         foam = ((2.5 + sin(-depthDifference * 10.0 + time * 2.0)) / 2.0) * (pow(2.0, -10.0 * depthDifference));
                     }
                    
-                    gl_FragColor = mix(mix(shallow_color, deep_color, (sin(min(depthDifference / 5.0, 1.0) * 3.14159 / 2.0 ))), bgColor, 1.0 - (sin(min(depthDifference / 8.0, 1.0) * 3.14159 / 2.0 )));
+                    gl_FragColor = mix(mix(shallow_color, deep_color, (sin(min(depthDifference / 5.0, 1.0) * 3.14159 / 2.0 ))), bgColor, 1.0 - (sin(max(depthDifference / 8.0, 0.0) * 3.14159 / 2.0 )));
                     gl_FragColor.xyz += lighting + foam;
                     gl_FragColor.xyz += reflectColor;
                     // gl_FragColor = vec4(reflectColor, 1.0);

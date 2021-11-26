@@ -353,7 +353,7 @@ export class Team_Project extends Scene {
             vec3(0, 1, 0),
         );
         this.light_proj_mat = Mat4.perspective(this.light_field_of_view, 1, 0.5, 150);
-        this.bgPassHeight = 480;
+        this.bgPassHeight = 360;
         this.bgPassWidth = this.bgPassHeight * 16 / 9;
         
         this.materials = {
@@ -386,7 +386,7 @@ export class Team_Project extends Scene {
         
         
         //the skybox is just a sphere with the shader that makes the color look vaguely like sky above. We put everything inside this sphere
-        this.skybox = new Scene_Object(new defs.Subdivision_Sphere(4), Mat4.scale(80, 80,80),
+        this.skybox = new Scene_Object(new defs.Subdivision_Sphere(4), Mat4.scale(40, 40,40),
             new Material(new Skybox_Shader(), {top_color: hex_color("#268b9a"), mid_color: hex_color("#d1eaf6"), bottom_color: hex_color("#3d8f2b"), light_position: this.light_position}));
 
         this.robot = new Scene_Object(this.shapes.robot, Mat4.translation(-500, -500, -500), new Material(new Shadow_Textured_Phong(), {ambient: 0.4, diffusivity: 1.84, specularity: 0.5, smoothness: 34, color_texture: this.robotTexture,
@@ -437,7 +437,7 @@ export class Team_Project extends Scene {
         this.grass_plane.material.light_depth_texture = this.lightDepthTexture;
         this.grass_plane.material.draw_shadow = true;
         this.grass_plane.material.lush_grass = this.lush_grass;
-        let layers = !drawWater ? 4 : this.uberPerformanceMode ? 1 : 18;
+        let layers = !drawWater ? 3 : this.uberPerformanceMode ? 1 : 18;
         for (let i = 0; i < layers; i+= 2) {
             this.grass_plane.material.shader.layer = i;
             this.grass_plane.drawObject(context, program_state);
