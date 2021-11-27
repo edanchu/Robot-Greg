@@ -207,7 +207,7 @@ export class Custom_Movement_Controls extends defs.Movement_Controls{
         super();
         //a mouse object that we can query from our main program to get location and pressedness
         this.mouse = {"from_center": vec(0, 0), "isPainting": false};
-        this.dt = 0;
+        this.dt = [1];
     }
 
     add_mouse_controls(canvas) {
@@ -248,7 +248,7 @@ export class Custom_Movement_Controls extends defs.Movement_Controls{
         this.control_panel.innerHTML += "Click and drag right mouse button to spin your viewpoint around it.<br>";
         this.new_line();
         this.live_string(box => {
-            box.textContent = "FPS: " + (1 / (this.dt / 1000)).toFixed(1);
+            box.textContent = "FPS: " + (1 / ((this.dt.reduce((a,b) => a + b) / this.dt.length) / 1000)).toFixed(1);
         });
         this.new_line();
         this.new_line();
@@ -271,7 +271,6 @@ export class Custom_Movement_Controls extends defs.Movement_Controls{
             this.reset(graphics_state);
             this.will_take_over_graphics_state = false;
         }
-        
         if (!this.mouse_enabled_canvases.has(context.canvas)) {
             this.add_mouse_controls(context.canvas);
             this.mouse_enabled_canvases.add(context.canvas)
@@ -281,7 +280,8 @@ export class Custom_Movement_Controls extends defs.Movement_Controls{
             this.third_person_arcball(dt * r);
         this.pos = this.inverse().times(vec4(0, 0, 0, 1));
         this.z_axis = this.inverse().times(vec4(0, 0, 1, 0));
-        this.dt = graphics_state.animation_delta_time;
+        this.dt.push(graphics_state.animation_delta_time);
+        if (this.dt.length > 500) this.dt.shift();
     }
 }
 

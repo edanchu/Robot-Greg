@@ -335,8 +335,8 @@ export class Grass_Shader_Shadow extends Shader {
                         float shadowness = PCF_shadow(light_tex_coord.xy, projected_depth);
                         
                         if (inRange && shadowness > 0.3) {
-                            diffuse *= 0.2 + 0.8 * (1.0 - shadowness);
-                            specular *= 1.0 - shadowness;
+                            diffuse *= 0.1 + 0.9 * (1.0 - shadowness);
+                            specular *= 1.0 - shadowness * 1.2;
                         }
                     }
                     
@@ -381,6 +381,7 @@ export class Grass_Shader_Background_Shadow extends Shader {
         super();
         this.layer = layer;
         this.num_lights = num_lights;
+        this.sentOnce = false;
     }
 
     update_GPU(context, gpu_addresses, graphics_state, model_transform, material) {
@@ -611,8 +612,8 @@ export class Grass_Shader_Background_Shadow extends Shader {
                         float shadowness = PCF_shadow(light_tex_coord.xy, projected_depth);
                         
                         if (inRange && shadowness > 0.3) {
-                            diffuse *= 0.2 + 0.8 * (1.0 - shadowness);
-                            specular *= 1.0 - shadowness;
+                            diffuse *= 0.1 + 0.9 * (1.0 - shadowness);
+                            specular *= 1.0 - shadowness * 1.2;
                         }
                     }
                     
@@ -974,7 +975,7 @@ export class Water_Shader extends Shader{
 }
 
 export class Shadow_Textured_Phong extends Shader {
-    constructor(layer, num_lights = 2) {
+    constructor(num_lights = 2) {
         super();
         this.num_lights = num_lights;
     }
@@ -1144,7 +1145,7 @@ export class Shadow_Textured_Phong extends Shader {
 }
 
 export class Shadow_Textured_Phong_Maps extends Shader{
-    constructor(layer, num_lights = 2) {
+    constructor(num_lights = 2) {
         super();
         this.num_lights = num_lights;
     }
