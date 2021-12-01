@@ -694,9 +694,6 @@ export class Water_Shader extends Shader{
         context.uniform1i(gpu_addresses.bg_color_texture, 2);
         material.bg_color_texture.activate(context, 2);
     
-        context.uniform1i(gpu_addresses.water_normal, 3);
-        material.water_normal.activate(context, 3);
-    
         context.uniform1i(gpu_addresses.derivative_height, 4);
         material.derivative_height.activate(context, 4);
     
@@ -851,7 +848,6 @@ export class Water_Shader extends Shader{
                 uniform sampler2D depth_texture;
                 uniform sampler2D bg_color_texture;
                 uniform sampler2D water_flow;
-                uniform sampler2D water_normal;
                 uniform sampler2D derivative_height;
                 uniform mat4 proj_matrix;
                 uniform mat4 model_transform;

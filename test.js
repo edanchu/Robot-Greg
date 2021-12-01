@@ -182,7 +182,7 @@ export class Team_Project extends Scene {
 
         //this calls the intersection function of the plane shape to find which vertex is nearest to the mouse click. the function takes
         //our mouse's location as the origin, and a vector direction to the world space location of the far coordinate, also a bool to see if to count yAxis position or not
-        return plane.shape.closestVertexToRay(worldSpaceNear, worldSpaceFar.minus(worldSpaceNear).normalized(), yAxis);
+        return plane.shape().closestVertexToRay(worldSpaceNear, worldSpaceFar.minus(worldSpaceNear).normalized(), yAxis);
     }
 
     //function that draws on a given texture at a given location with a given brush radius in pixels. need to pass in the world
@@ -215,11 +215,11 @@ export class Team_Project extends Scene {
 
     //lowers a given plane's vertices in a circle given by brushradius around a point. uses the same logic as the draw on texture function
     lowerPlane(plane, location, brushRadius) {
-        let planeLocPercent = Vector.create((location[0]-1) / (plane.shape.length / 2), (location[2]-1) / (plane.shape.width / 2));
+        let planeLocPercent = Vector.create((location[0]-1) / (plane.shape().length / 2), (location[2]-1) / (plane.shape().width / 2));
         planeLocPercent[0] = Math.max(Math.min(0.75, planeLocPercent[0]), -0.75);
         planeLocPercent[1] = Math.max(Math.min(0.75, planeLocPercent[1]), -0.75);
-        let planeLoc = Vector.create(Math.ceil(planeLocPercent[0] * (plane.shape.length * plane.shape.density / 2)) + (plane.shape.length * plane.shape.density / 2),
-            Math.ceil(planeLocPercent[1] * (plane.shape.width * plane.shape.density / 2)) + (plane.shape.width * plane.shape.density / 2));
+        let planeLoc = Vector.create(Math.ceil(planeLocPercent[0] * (plane.shape().length * plane.shape().density / 2)) + (plane.shape().length * plane.shape().density / 2),
+            Math.ceil(planeLocPercent[1] * (plane.shape().width * plane.shape().density / 2)) + (plane.shape().width * plane.shape().density / 2));
 
         //attenuate strength based on brush radius so that large brushes don't raise terrain much faster than small brushes
         let strength = 0.1 / Math.max((brushRadius - 6), 1);
@@ -228,10 +228,10 @@ export class Team_Project extends Scene {
                 let dx = 0;
                 let sq = (i * i) - (dy * dy);
                 while ((dx * dx) < sq) {
-                    plane.shape.removeVertexHeight(dx + planeLoc[0], dy + planeLoc[1], strength);
-                    plane.shape.removeVertexHeight(dx + planeLoc[0], -dy + planeLoc[1] - 1, strength);
-                    plane.shape.removeVertexHeight(-dx + planeLoc[0] - 1, dy + planeLoc[1], strength);
-                    plane.shape.removeVertexHeight(-dx + planeLoc[0] - 1, -dy + planeLoc[1] - 1, strength);
+                    plane.shape().removeVertexHeight(dx + planeLoc[0], dy + planeLoc[1], strength);
+                    plane.shape().removeVertexHeight(dx + planeLoc[0], -dy + planeLoc[1] - 1, strength);
+                    plane.shape().removeVertexHeight(-dx + planeLoc[0] - 1, dy + planeLoc[1], strength);
+                    plane.shape().removeVertexHeight(-dx + planeLoc[0] - 1, -dy + planeLoc[1] - 1, strength);
                     this.obstacleArr[dx + planeLoc[0]][dy + planeLoc[1]] = 0;
                     this.obstacleArr[dx + planeLoc[0]][-dy + planeLoc[1] - 1] = 0;
                     this.obstacleArr[-dx + planeLoc[0] - 1][dy + planeLoc[1]] = 0;
@@ -244,21 +244,21 @@ export class Team_Project extends Scene {
 
     //exact same implementation as lowerPlane except it raises the plane
     raisePlane(plane, location, brushRadius) {
-        let planeLocPercent = Vector.create((location[0]-1) / (plane.shape.length / 2), (location[2]-1) / (plane.shape.width / 2));
+        let planeLocPercent = Vector.create((location[0]-1) / (plane.shape().length / 2), (location[2]-1) / (plane.shape().width / 2));
         planeLocPercent[0] = Math.max(Math.min(0.75, planeLocPercent[0]), -0.75);
         planeLocPercent[1] = Math.max(Math.min(0.75, planeLocPercent[1]), -0.75);
-        let planeLoc = Vector.create(Math.ceil(planeLocPercent[0] * (plane.shape.length * plane.shape.density / 2)) + (plane.shape.length * plane.shape.density / 2),
-            Math.ceil(planeLocPercent[1] * (plane.shape.width * plane.shape.density / 2)) + (plane.shape.width * plane.shape.density / 2));
+        let planeLoc = Vector.create(Math.ceil(planeLocPercent[0] * (plane.shape().length * plane.shape().density / 2)) + (plane.shape().length * plane.shape().density / 2),
+            Math.ceil(planeLocPercent[1] * (plane.shape().width * plane.shape().density / 2)) + (plane.shape().width * plane.shape().density / 2));
         let strength = 0.05 / Math.max((brushRadius - 6), 1);
         for (let i = 5; i < brushRadius; i++) {
             for (let dy = 0; dy < i; dy++) {
                 let dx = 0;
                 let sq = (i * i) - (dy * dy);
                 while ((dx * dx) < sq) {
-                    plane.shape.addVertexHeight(dx + planeLoc[0], dy + planeLoc[1], strength);
-                    plane.shape.addVertexHeight(dx + planeLoc[0], -dy + planeLoc[1] - 1, strength);
-                    plane.shape.addVertexHeight(-dx + planeLoc[0] - 1, dy + planeLoc[1], strength);
-                    plane.shape.addVertexHeight(-dx + planeLoc[0] - 1, -dy + planeLoc[1] - 1, strength);
+                    plane.shape().addVertexHeight(dx + planeLoc[0], dy + planeLoc[1], strength);
+                    plane.shape().addVertexHeight(dx + planeLoc[0], -dy + planeLoc[1] - 1, strength);
+                    plane.shape().addVertexHeight(-dx + planeLoc[0] - 1, dy + planeLoc[1], strength);
+                    plane.shape().addVertexHeight(-dx + planeLoc[0] - 1, -dy + planeLoc[1] - 1, strength);
                     this.obstacleArr[dx + planeLoc[0]][dy + planeLoc[1]] = 0;
                     this.obstacleArr[dx + planeLoc[0]][-dy + planeLoc[1] - 1] = 0;
                     this.obstacleArr[-dx + planeLoc[0] - 1][dy + planeLoc[1]] = 0;
@@ -321,10 +321,9 @@ export class Team_Project extends Scene {
         this.robotTexture = new Texture("assets/robot/greenTEX.png");
         this.goalTexture = new Texture("assets/robot/YellowTEX.png");
         this.waterDerivativeHeight = new Texture("assets/textures/water_derivative_height.png");
-        this.waterNormal = new Texture("assets/textures/water_normal.png");
         this.waterFlowMap = new Texture("assets/textures/flow_speed_noise.png");
-        this.grassCoarseTexture = new Texture("assets/noise/grainy.png", "LINEAR");
-        this.grassBroadTexture = new Texture("assets/noise/perlin2.png", "LINEAR");
+        this.grassCoarseTexture = new Texture("assets/noise/Grainy.png", "LINEAR");
+        this.grassBroadTexture = new Texture("assets/noise/Perlin2.png", "LINEAR");
         this.grassUnderwaterTexture = new Texture("assets/textures/underwater2_diffuse.png");
         
         this.shapes = {
@@ -364,7 +363,7 @@ export class Team_Project extends Scene {
         this.light_position = vec4(23, 20, -23, 0);
         this.light_color = color(0.8,0.86,1,0);
         this.light_view_target = vec4(0, 0, 0, 1);
-        this.light_field_of_view = 120 * Math.PI / 180;
+        this.light_field_of_view = 100 * Math.PI / 180;
         this.light_view_mat = Mat4.look_at(
             vec3(this.light_position[0], this.light_position[1], this.light_position[2]),
             vec3(this.light_view_target[0], this.light_view_target[1], this.light_view_target[2]),
@@ -408,7 +407,7 @@ export class Team_Project extends Scene {
 
         this.water_plane = new Scene_Object(new Triangle_Strip_Plane(26,26, Vector3.create(0,0,0), 7), Mat4.translation(0,-0.7,0),
             new Material(new Water_Shader(), {shallow_color: hex_color("#00ffe8"), deep_color: hex_color("#052a44"), ambient: 0.0, diffusivity: 1.0, specularity: 0.025, smoothness: 1, lush_grass: this.lush_grass,
-            depth_texture: null, bg_color_texture: null, water_normal: this.waterNormal, derivative_height: this.waterDerivativeHeight, water_flow: this.waterFlowMap, doSSR: this.waterSSR}), "TRIANGLE_STRIP");
+            depth_texture: null, bg_color_texture: null, derivative_height: this.waterDerivativeHeight, water_flow: this.waterFlowMap, doSSR: this.waterSSR}), "TRIANGLE_STRIP");
         
         
         //the skybox is just a sphere with the shader that makes the color look vaguely like sky above. We put everything inside this sphere
@@ -432,35 +431,35 @@ export class Team_Project extends Scene {
         if (drawWater)
             this.skybox.drawObject(context, program_state);
 
-        this.robot.material.light_depth_texture = this.lightDepthTexture;
+        this.robot.material().light_depth_texture = this.lightDepthTexture;
         this.robot.drawObject(context, program_state);
-        this.robot.material.light_depth_texture = null;
+        this.robot.material().light_depth_texture = null;
         
-        this.goal.material.light_depth_texture = this.lightDepthTexture;
+        this.goal.material().light_depth_texture = this.lightDepthTexture;
         this.goal.drawObject(context, program_state);
-        this.goal.material.light_depth_texture = null;
+        this.goal.material().light_depth_texture = null;
         
         if(drawWater) {
-            this.background_grass_plane.material.light_depth_texture = this.lightDepthTexture;
-            this.background_grass_plane.material.draw_shadow = true;
-            this.background_grass_plane.material.lush_grass = this.lush_grass;
+            this.background_grass_plane.material().light_depth_texture = this.lightDepthTexture;
+            this.background_grass_plane.material().draw_shadow = true;
+            this.background_grass_plane.material().lush_grass = this.lush_grass;
             let bglayers = this.performanceMode ? 0 : 18;
             for (let i = bglayers; i >= 0; i -= 2) {
-                this.background_grass_plane.material.shader.layer = i;
+                this.background_grass_plane.material().shader.layer = i;
                 this.background_grass_plane.drawObject(context, program_state);
             }
-            this.background_grass_plane.material.light_depth_texture = null;
+            this.background_grass_plane.material().light_depth_texture = null;
         }
         
-        this.grass_plane.material.light_depth_texture = this.lightDepthTexture;
-        this.grass_plane.material.draw_shadow = true;
-        this.grass_plane.material.lush_grass = this.lush_grass;
+        this.grass_plane.material().light_depth_texture = this.lightDepthTexture;
+        this.grass_plane.material().draw_shadow = true;
+        this.grass_plane.material().lush_grass = this.lush_grass;
         let layers = !drawWater ? this.uberPerformanceMode ? 0 : 4 : this.uberPerformanceMode ? 0 : 18;
         for (let i = layers; i >= 0; i-= 2) {
-            this.grass_plane.material.shader.layer = i;
+            this.grass_plane.material().shader.layer = i;
             this.grass_plane.drawObject(context, program_state);
         }
-        this.grass_plane.material.light_depth_texture = null;
+        this.grass_plane.material().light_depth_texture = null;
         
         this.materials.tree.light_depth_texture = this.lightDepthTexture;
         this.materials.rock.light_depth_texture = this.lightDepthTexture;
@@ -479,14 +478,14 @@ export class Team_Project extends Scene {
         this.materials.rock1.light_depth_texture = null;
         
         if (drawWater) {
-            this.water_plane.material.bg_color_texture = this.cameraColorTexture;
-            this.water_plane.material.depth_texture = this.cameraDepthTexture;
-            this.water_plane.material.doSSR = this.waterSSR;
+            this.water_plane.material().bg_color_texture = this.cameraColorTexture;
+            this.water_plane.material().depth_texture = this.cameraDepthTexture;
+            this.water_plane.material().doSSR = this.waterSSR;
             
             this.water_plane.drawObject(context, program_state);
             
-            this.water_plane.material.bg_color_texture = null;
-            this.water_plane.material.depth_texture = null;
+            this.water_plane.material().bg_color_texture = null;
+            this.water_plane.material().depth_texture = null;
         }
     }
     
@@ -497,18 +496,18 @@ export class Team_Project extends Scene {
         this.goal.drawOverrideMaterial(context, program_state, this.materials.plain);
 
         //this.shapes.axis.draw(context, program_state, Mat4.identity(), this.materials.plain);
-        this.background_grass_plane.material.draw_shadow = false;
-        this.grass_plane.material.draw_shadow = false;
+        this.background_grass_plane.material().draw_shadow = false;
+        this.grass_plane.material().draw_shadow = false;
         
         let bglayers = this.performanceMode ? 0:20;
         for (let i = bglayers; i >= 0; i-= 4) {
-            this.background_grass_plane.material.shader.layer = i;
+            this.background_grass_plane.material().shader.layer = i;
             this.background_grass_plane.drawObject(context, program_state);
         }
         
         let layers = this.uberPerformanceMode ? 0 : 20;
         for (let i = layers; i >= 0; i-= 4) {
-            this.grass_plane.material.shader.layer = i;
+            this.grass_plane.material().shader.layer = i;
             this.grass_plane.drawObject(context, program_state);
         }
 
@@ -539,18 +538,18 @@ export class Team_Project extends Scene {
             if (this.isRaising === true) {
                 let dest = this.getClosestLocOnPlane(this.grass_plane, context, program_state, false);
                 this.raisePlane(this.grass_plane, dest, 20);
-                this.grass_plane.shape.copy_onto_graphics_card(context.context);
+                this.grass_plane.shape().copy_onto_graphics_card(context.context);
             }
             //same as above
             else if (this.isLowering === true) {
                 let dest = this.getClosestLocOnPlane(this.grass_plane, context, program_state, false);
                 this.lowerPlane(this.grass_plane, dest, 20);
-                this.grass_plane.shape.copy_onto_graphics_card(context.context);
+                this.grass_plane.shape().copy_onto_graphics_card(context.context);
             }
             //if we are occluding, then draw on the texture, but here we care about yAxis position. The texture is sent to the graphics card later, so not sent now
             else if (this.isOccluding === true){
                 let dest = this.getClosestLocOnPlane(this.grass_plane, context, program_state, true);
-                this.drawnOnTexture(this.grassOcclusionTexture, this.grass_plane.shape.length, this.grass_plane.shape.width, dest, 13);
+                this.drawnOnTexture(this.grassOcclusionTexture, this.grass_plane.shape().length, this.grass_plane.shape().width, dest, 13);
             }
             else if (this.placeTree === true && program_state.animation_time - this.lastPlaced > 100) {
                 let dest = this.getClosestLocOnPlane(this.grass_plane, context, program_state, true);
@@ -635,7 +634,7 @@ export class Team_Project extends Scene {
                 this.robot.transform = desired.map((x, i) => Vector.from(this.robot.transform[i]).mix(x, program_state.animation_delta_time / 150));
                 let dest = Vector3.create(this.robot.transform[0][3], 0, this.robot.transform[2][3]);
                 this.startPos = [Math.floor(7 * (dest[0] + 12)), Math.floor(7 * (dest[2] + 12))];
-                this.drawnOnTexture(this.grassOcclusionTexture, this.grass_plane.shape.length, this.grass_plane.shape.width, dest, 8);
+                this.drawnOnTexture(this.grassOcclusionTexture, this.grass_plane.shape().length, this.grass_plane.shape().width, dest, 8);
             }
         }
         

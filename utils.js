@@ -327,18 +327,18 @@ export class Buffered_Texture extends tiny.Graphics_Card_Object {
 
 export class Scene_Object{
     constructor(shape, transform, material, renderArgs = "TRIANGLES") {
-        this.shape = shape;
+        this.shape = () => shape;
         this.transform = transform;
-        this.material = material;
+        this.material = () => material;
         this.renderArgs = renderArgs;
     }
 
     drawObject(context, program_state){
-        this.shape.draw(context, program_state, this.transform, this.material, this.renderArgs);
+        this.shape().draw(context, program_state, this.transform, this.material(), this.renderArgs);
     }
 
     drawOverrideMaterial(context, program_state, overrideMat){
-        this.shape.draw(context, program_state, this.transform, overrideMat, this.renderArgs);
+        this.shape().draw(context, program_state, this.transform, overrideMat, this.renderArgs);
     }
 }
 
