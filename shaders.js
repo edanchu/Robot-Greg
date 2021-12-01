@@ -205,6 +205,7 @@ export class Grass_Shader_Shadow extends Shader {
                 uniform vec4 grass_color;
         
                 varying vec3 N, vertex_worldspace;
+                varying vec3 diffuse, specular;
                 
                 vec3 triPlanar(vec3 N, vec3 vertex_worldspace, sampler2D texture){
                     vec3 x = texture2D(texture, vertex_worldspace.zy / 2.0).xyz;
@@ -244,7 +245,7 @@ export class Grass_Shader_Shadow extends Shader {
                             vec4 underwaterTexColor = vec4(triPlanar(N, vertex_worldspace * 1.3, underwater_texture), 1.0);
                             vec4 groundTexColor = mix(dirtTexColor, underwaterTexColor, (vertex_worldspace.y < 0.0) ? 1.0 - min(1.1, 1.1 - abs(vertex_worldspace.y)): 0.0);
                             light_contribution = groundTexColor.xyz * light_colors[i].xyz * diffusivity * diffuse + light_colors[i].xyz * specularity * specular;
-                            light_diffuse_contribution += attenuation * groundTexColor.xyz * light_colors[i].xyz * diffusivity * diffuse;
+                            light_diffuse_contribution += attenuation * groundTexColor.xyz / 3.0 * light_colors[i].xyz * diffusivity * diffuse;
                             light_specular_contribution += attenuation * groundTexColor.xyz * specularity * specular;
                         }
                         result += attenuation * light_contribution;
@@ -270,6 +271,7 @@ export class Grass_Shader_Shadow extends Shader {
                     gl_Position = projection_camera_model_transform * vec4(position.x + (0.2 * alpha), position.y + (0.04 * layer), position.z + (0.2 * alpha), 1.0);
                     f_tex_coord = texture_coord;
                     N =  normalize((inv_transpose_model_transform * vec4(normal, 0.0)).xyz);
+                    vec3 other_than_ambient = phong_model_lights( N, vertex_worldspace, diffuse, specular);
                 }`;
     }
 
@@ -311,14 +313,13 @@ export class Grass_Shader_Shadow extends Shader {
                     vec4 underwaterTexColor = vec4(triPlanar(N, vertex_worldspace * 1.3, underwater_texture), 1.0);
                     vec4 groundTexColor = mix(dirtTexColor, underwaterTexColor, (vertex_worldspace.y < 0.0) ? 1.0 - min(1.1, 1.1 - abs(vertex_worldspace.y)): 0.0);
                     if (layer > 0.0){
-                        gl_FragColor = vec4(grass_color.x * ambient + (layer / 70.0), grass_color.y * ambient + (layer / 70.0), grass_color.z * ambient + (layer / 70.0), 1.0);
+                        gl_FragColor = vec4(grass_color.xyz * ambient + (layer / 70.0), 1.0);
                     }
                     else {
-                        gl_FragColor = vec4(groundTexColor.xyz * ambient, 1.0);
+                        gl_FragColor = vec4(groundTexColor.xyz * ambient * 3.0, 1.0);
                     }
-                    vec3 diffuse, specular;
-                    vec3 other_than_ambient = phong_model_lights( normalize( N ), vertex_worldspace, diffuse, specular );
-                    
+                    vec3 diffuse1 = diffuse;
+                    vec3 specular1 = specular;
                     if (draw_shadow) {
                         vec4 light_tex_coord = (light_proj_mat * light_view_mat * vec4(vertex_worldspace, 1.0));
                         light_tex_coord.xyz /= light_tex_coord.w; 
@@ -335,12 +336,12 @@ export class Grass_Shader_Shadow extends Shader {
                         float shadowness = PCF_shadow(light_tex_coord.xy, projected_depth);
                         
                         if (inRange && shadowness > 0.3) {
-                            diffuse *= 0.1 + 0.9 * (1.0 - shadowness);
-                            specular *= 1.0 - shadowness * 1.2;
+                            diffuse1 *= 0.1 + 0.9 * (1.0 - shadowness);
+                            specular1 *= 1.0 - shadowness * 1.2;
                         }
                     }
                     
-                    gl_FragColor.xyz += diffuse + specular;
+                    gl_FragColor.xyz += diffuse1 + specular1;
                     
                     if (layer > 0.0){
                         if(vertex_worldspace.y < -1.0) discard;
@@ -439,6 +440,7 @@ export class Grass_Shader_Background_Shadow extends Shader {
                 
                 uniform sampler2D ground_texture;
                 varying vec2 f_tex_coord;
+                varying vec3 diffuse, specular;
                                 
                 float random (vec2 value){
                     return fract(sin(dot(value, vec2(94.8365, 47.053))) * 94762.9342);
@@ -519,8 +521,8 @@ export class Grass_Shader_Background_Shadow extends Shader {
                             vec4 groundTexColor = texture2D(ground_texture, f_tex_coord * 60.0);
                             light_contribution = groundTexColor.xyz * light_colors[i].xyz * diffusivity * diffuse
                                                                   + light_colors[i].xyz * specularity * specular;
-                            light_diffuse_contribution += attenuation * groundTexColor.xyz * light_colors[i].xyz * diffusivity * diffuse;
-                            light_specular_contribution += attenuation * groundTexColor.xyz * specularity * specular;
+                            light_diffuse_contribution += attenuation * groundTexColor.xyz / 3.0 * light_colors[i].xyz * diffusivity * diffuse;
+                            light_specular_contribution += attenuation * groundTexColor.xyz / 3.0 * specularity * specular;
                         }
                         result += attenuation * light_contribution;
                       }
@@ -546,7 +548,7 @@ export class Grass_Shader_Background_Shadow extends Shader {
                     N =  normalize(inv_transpose_model_transform * vec4(normal, 0.0)).xyz;
                     vertex_worldspace = (model_transform * vec4( position, 1.0 )).xyz;
                     f_tex_coord = texture_coord;
-                    
+                    vec3 other_than_ambient = phong_model_lights( N, vertex_worldspace, diffuse, specular);
                 }`;
     }
 
@@ -591,10 +593,10 @@ export class Grass_Shader_Background_Shadow extends Shader {
                         gl_FragColor = vec4(grass_color.x * ambient + (layer / 70.0), grass_color.y * ambient + (layer / 70.0), grass_color.z * ambient + (layer / 70.0), 1.0 - exp(-0.5 * (40.0 - distance(vec4(0,0,0,0), worldPos))));
                     }
                     else {
-                        gl_FragColor = vec4(groundTexColor.x * ambient + (layer / 70.0), groundTexColor.y * ambient + (layer / 70.0), groundTexColor.z * ambient + (layer / 70.0), 1.0 - exp(-0.5 * (40.0 - distance(vec4(0,0,0,0), worldPos))));
+                        gl_FragColor = vec4(groundTexColor.xyz * ambient * 3.0, 1.0 - exp(-0.5 * (40.0 - distance(vec4(0,0,0,0), worldPos))));
                     }
-                    vec3 diffuse, specular;
-                    vec3 other_than_ambient = phong_model_lights( normalize( N ), vertex_worldspace, diffuse, specular );
+                    vec3 diffuse1 = diffuse;
+                    vec3 specular1 = specular;
                     
                     if (draw_shadow) {
                         vec4 light_tex_coord = (light_proj_mat * light_view_mat * vec4(vertex_worldspace, 1.0));
@@ -612,12 +614,12 @@ export class Grass_Shader_Background_Shadow extends Shader {
                         float shadowness = PCF_shadow(light_tex_coord.xy, projected_depth);
                         
                         if (inRange && shadowness > 0.3) {
-                            diffuse *= 0.1 + 0.9 * (1.0 - shadowness);
-                            specular *= 1.0 - shadowness * 1.2;
+                            diffuse1 *= 0.1 + 0.9 * (1.0 - shadowness);
+                            specular1 *= 1.0 - shadowness * 1.2;
                         }
                     }
                     
-                    gl_FragColor.xyz += diffuse + specular;
+                    gl_FragColor.xyz += diffuse1 + specular1;
 
                     if (layer > 0.0){
                         if (worldPos.y < -1.0){
