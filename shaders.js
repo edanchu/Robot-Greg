@@ -908,7 +908,7 @@ export class Water_Shader extends Shader{
                     vec3 normal = normalize(vec3(-(dhA.xy + dhB.xy), 1.0));
                     
                     float refractionStrength = 0.036;
-                    vec2 bgSS = vec2((gl_FragCoord.x - 0.5) / 1279.0, (gl_FragCoord.y - 0.5) / 719.0);
+                    vec2 bgSS = vec2((gl_FragCoord.x - 0.5) / 1919.0, (gl_FragCoord.y - 0.5) / 1079.0);
                     float refractionDepthVal = texture2D(depth_texture, bgSS + (normal.xy * refractionStrength)).r;
                     refractionDepthVal = linearDepth(refractionDepthVal) - linearDepth(gl_FragCoord.z);
                     if (refractionDepthVal > 0.0)

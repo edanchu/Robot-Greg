@@ -359,7 +359,7 @@ export class Team_Project extends Scene {
         this.defaultCamera = Mat4.look_at(vec3(9, 15, 22), vec3(1, 0, 0), vec3(0, 1, 0));
         
         //variables to deal with light and shadows
-        this.lightDepthTextureSize = 2048;
+        this.lightDepthTextureSize = 4096;
         this.light_position = vec4(23, 20, -23, 0);
         this.light_color = color(0.8,0.86,1,0);
         this.light_view_target = vec4(0, 0, 0, 1);
