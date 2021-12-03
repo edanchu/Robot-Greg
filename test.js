@@ -370,7 +370,8 @@ export class Team_Project extends Scene {
             vec3(0, 1, 0),
         );
         this.light_proj_mat = Mat4.perspective(this.light_field_of_view, 1, 0.5, 150);
-        this.bgPassHeight = 360;
+     
+        this.bgPassHeight = 1080;
         this.bgPassWidth = this.bgPassHeight * 16 / 9;
         
         this.materials = {
